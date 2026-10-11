@@ -49,8 +49,15 @@ export default {
   state: initialState,
 
   reducers: {
-    saveCurrentDoc(state: DocDetailState, { payload }: { payload: DocItem | null }) {
-      state.currentDoc = payload;
+    saveCurrentDoc(state: DocDetailState, { payload }: { payload: any | null }) {
+      // getDocDetail 返回结构为 { doc: MockDoc, current_version, version_overview, ... }
+      // 统一展平为 { ...MockDoc, current_version, version_overview, ... }
+      if (payload && payload.doc) {
+        const { doc, ...rest } = payload;
+        state.currentDoc = { ...doc, ...rest } as DocItem;
+      } else {
+        state.currentDoc = payload as DocItem;
+      }
     },
     saveAiOutline(state: DocDetailState, { payload }: { payload: AiOutline | null }) {
       state.aiOutline = payload;

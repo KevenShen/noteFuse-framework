@@ -1,6 +1,7 @@
 // src/pages/Doc/components/DocRightPanel.tsx
 // 文档详情页右侧工具坞 - 目录大纲 / 批注列表 / AI助手 / 分享导出
 // 组件自治：自行从 model 获取 UI 状态和批注数据，自行 dispatch 更新
+// 锚点提取、滚动监听、大纲加载下沉到 useDocumentAnchors hook
 import { useShallowSelector } from '@/hooks';
 import { copyToClipboard } from '@/utils/index';
 import {
@@ -28,16 +29,16 @@ import {
   message,
 } from 'antd';
 import React, { useState } from 'react';
-import type { AnchorItem } from '../types';
+import { useDocumentAnchors } from '../hooks/useDocumentAnchors';
 import type { AnnotationItem } from '../utils/annotationUtils';
 
 interface DocRightPanelProps {
-  /** 锚点列表（从页面组件传入，因为计算逻辑复杂） */
-  anchors: AnchorItem[];
   docId: number;
   projectId: number;
+  versionId: string | null;
+  /** MDXEditor 引用（用于滚动到锚点） */
+  markdownDocRef: React.RefObject<any>;
   onClose: () => void;
-  onAnchorClick: (anchor: AnchorItem) => void;
   onJumpToAnnotation?: (annotation: AnnotationItem) => void;
   onEditAnnotation?: (annotation: AnnotationItem) => void;
   onDeleteAnnotation?: (annotation: AnnotationItem) => void;
@@ -45,11 +46,11 @@ interface DocRightPanelProps {
 }
 
 const DocRightPanel: React.FC<DocRightPanelProps> = ({
-  anchors,
   docId,
   projectId,
+  versionId,
+  markdownDocRef,
   onClose,
-  onAnchorClick,
   onJumpToAnnotation,
   onEditAnnotation,
   onDeleteAnnotation,
@@ -58,17 +59,20 @@ const DocRightPanel: React.FC<DocRightPanelProps> = ({
   const dispatch = useDispatch();
   const [aiInput, setAiInput] = useState('');
 
+  // 锚点管理（组件自治，内部计算锚点列表、监听滚动）
+  const { anchors, activeAnchor, focusMode, handleAnchorClick } = useDocumentAnchors(
+    docId,
+    versionId,
+    markdownDocRef,
+  );
+
   // 自行从 model 获取 UI 状态和批注数据
   const {
     activeTab,
-    activeAnchor,
-    focusMode,
     collected,
     annotations,
   } = useShallowSelector((state: any) => ({
     activeTab: state.docDetail.activeTab,
-    activeAnchor: state.docDetail.activeAnchor,
-    focusMode: state.docDetail.focusMode,
     collected: state.docDetail.collected,
     annotations: state.docAnnotations.docAnnotations,
   }));

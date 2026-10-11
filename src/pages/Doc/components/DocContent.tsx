@@ -22,7 +22,7 @@ import { Avatar, Button, Divider, Space, Tag, Tooltip, message } from 'antd';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import type { DocItem } from '@/pages/Project/types';
 import DocTitle from './DocTitle';
 import { mergeAnnotations, filterMarkers, extractSectionByTitle, type AnnotationItem } from '../utils/annotationUtils';
@@ -32,11 +32,9 @@ dayjs.locale('zh-cn');
 
 interface DocContentProps {
   doc: DocItem | null;
-  /** 当前查看的版本对象（单独传入，确保能获取到版本 content） */
-  currentVersion: DocVersion | null;
+  /** 当前版本 ID（从路由获取，用于计算 currentVersion） */
+  versionId: string | null;
   loading: boolean;
-  prevDoc: { key: string; title: string } | null;
-  nextDoc: { key: string; title: string } | null;
   markdownDocRef: React.RefObject<MDXEditorRef>;
   onSelectDoc: (docId: number) => void;
   onSaveAnnotation: () => void;
@@ -47,10 +45,8 @@ interface DocContentProps {
 
 const DocContent: React.FC<DocContentProps> = ({
   doc,
-  currentVersion,
+  versionId,
   loading,
-  prevDoc,
-  nextDoc,
   markdownDocRef,
   onSelectDoc,
   onSaveAnnotation,
@@ -60,7 +56,7 @@ const DocContent: React.FC<DocContentProps> = ({
 }) => {
   const dispatch = useDispatch();
 
-  // 自行从 model 获取 UI 状态
+  // 自行从 model 获取 UI 状态和数据
   const {
     outlineMode,
     outlineContent,
@@ -74,6 +70,8 @@ const DocContent: React.FC<DocContentProps> = ({
     editingAnnotation,
     annotationContent,
     annotationSaving,
+    docVersions,
+    docList,
   } = useShallowSelector((state: any) => ({
     outlineMode: state.docDetail.outlineMode,
     outlineContent: state.docDetail.outlineContent,
@@ -87,7 +85,43 @@ const DocContent: React.FC<DocContentProps> = ({
     editingAnnotation: state.docAnnotations.editingAnnotation,
     annotationContent: state.docAnnotations.annotationContent,
     annotationSaving: state.docAnnotations.annotationSaving,
+    docVersions: state.docVersions.docVersions,
+    docList: state.docList.docList,
   }));
+
+  // ==================== 当前版本（组件内部计算） ====================
+  const currentVersion = useMemo(() => {
+    if (!docVersions || docVersions.length === 0 || !doc?.id) return null;
+    if (versionId) {
+      return docVersions.find((v: any) => v.id === Number(versionId)) || null;
+    }
+    return (
+      docVersions.find((v: any) => v.doc_id === doc.id && v.is_current) || null
+    );
+  }, [docVersions, doc?.id, versionId]);
+
+  // ==================== 上一篇/下一篇（组件内部计算） ====================
+  const { prev: prevDoc, next: nextDoc } = useMemo(() => {
+    if (!doc?.id || !docList) return { prev: null, next: null };
+    const allDocs = [...docList].sort((a: any, b: any) => a.sort - b.sort);
+    const currentIndex = allDocs.findIndex((d: any) => d.id === doc.id);
+    return {
+      prev:
+        currentIndex > 0
+          ? {
+              key: String(allDocs[currentIndex - 1].id),
+              title: allDocs[currentIndex - 1].name,
+            }
+          : null,
+      next:
+        currentIndex < allDocs.length - 1 && currentIndex >= 0
+          ? {
+              key: String(allDocs[currentIndex + 1].id),
+              title: allDocs[currentIndex + 1].name,
+            }
+          : null,
+    };
+  }, [docList, doc?.id]);
 
   // 内容容器 ref（用于事件委托）
   const contentContainerRef = useRef<HTMLDivElement>(null);
