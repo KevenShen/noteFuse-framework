@@ -62,7 +62,7 @@ const Header: React.FC<HeaderProps> = ({
           // 清除 initialState 中的用户信息
           setInitialState((s: any) => ({ ...s, currentUser: null }));
           // 调用 Dva model 的退出登录 effect（清除 token、跳转登录页）
-          dispatch({ type: 'user/handleLogout' });
+          dispatch({ type: 'userLogin/handleLogout' });
         },
       },
     ],

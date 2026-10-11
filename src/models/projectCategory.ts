@@ -56,20 +56,14 @@ export default {
       );
     },
     /** 设置加载状态 */
-    setLoading(
-      state: ProjectCategoryState,
-      { payload }: { payload: boolean },
-    ) {
+    setLoading(state: ProjectCategoryState, { payload }: { payload: boolean }) {
       state.loading = payload;
     },
   },
 
   effects: {
     // ==================== 获取分类列表 ====================
-    *fetchCategoryList(
-      _: any,
-      { call, put }: any,
-    ): Generator<any, void, any> {
+    *fetchCategoryList(_: any, { call, put }: any): Generator<any, void, any> {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(projectCategoryService.getCategoryList);

@@ -1,14 +1,9 @@
 // src/services/user.ts
+// 用户资料/设置 Service 层
+// 职责：个人资料更新、修改密码、编辑器设置（登录/注册/重置密码已拆分）
 import { request } from '@umijs/max';
 
-export interface RegisterParams {
-  username: string;
-  email: string;
-  password: string;
-  confirm_password: string;
-  invite_code?: string;
-}
-
+/** 更新个人资料参数 */
 export interface UpdateProfileParams {
   username: string;
   nickname?: string;
@@ -16,72 +11,24 @@ export interface UpdateProfileParams {
   email?: string;
 }
 
+/** 修改密码参数（登录状态下） */
 export interface ChangePasswordParams {
   old_password: string;
   new_password: string;
   confirm_password: string;
 }
 
+/** 编辑器设置参数 */
 export interface EditorSettingsParams {
   editor: 'vditor' | 'mdxeditor' | 'monaco';
   autosave: boolean;
   livepreview: boolean;
 }
 
-export async function login(username: string, password: string) {
-  if (!username || !password) throw new Error('账号密码不能为空');
-  return request('/api/login', {
-    method: 'POST',
-    data: { username, password },
-  });
-}
-
-export async function logout() {
-  return request('/api/logout', { method: 'POST' });
-}
-
-export async function register(data: RegisterParams) {
-  if (data.password !== data.confirm_password) {
-    throw new Error('两次输入的密码不一致');
-  }
-  return request('/api/register', { method: 'POST', data });
-}
-
-export async function getCurrentUser() {
-  return request('/api/currentUser', { method: 'GET' });
-}
-
-// 发送重置密码验证码
-export async function sendResetCode(email: string) {
-  if (!email) {
-    throw new Error('邮箱地址不能为空');
-  }
-  return request('/api/password/send-code', {
-    method: 'POST',
-    data: { email },
-  });
-}
-
-// 重置密码（忘记密码）
-export async function resetPassword(data: {
-  email: string;
-  code: string;
-  new_password: string;
-  confirm_password: string;
-}) {
-  if (data.new_password !== data.confirm_password) {
-    throw new Error('两次输入的密码不一致');
-  }
-  if (!data.code || data.code.length !== 6) {
-    throw new Error('请输入正确的6位验证码');
-  }
-  return request('/api/password/reset', {
-    method: 'POST',
-    data,
-  });
-}
-
-// 更新个人资料
+/**
+ * 更新个人资料
+ * @param data 更新参数
+ */
 export async function updateProfile(data: UpdateProfileParams) {
   return request('/api/user/profile', {
     method: 'PUT',
@@ -89,7 +36,10 @@ export async function updateProfile(data: UpdateProfileParams) {
   });
 }
 
-// 修改密码（登录状态下）
+/**
+ * 修改密码（登录状态下）
+ * @param data 修改密码参数
+ */
 export async function changePassword(data: ChangePasswordParams) {
   if (data.new_password !== data.confirm_password) {
     throw new Error('两次输入的新密码不一致');
@@ -103,12 +53,17 @@ export async function changePassword(data: ChangePasswordParams) {
   });
 }
 
-// 获取当前用户的编辑器设置
+/**
+ * 获取当前用户的编辑器设置
+ */
 export async function getEditorSettings() {
   return request('/api/user/editor-settings', { method: 'GET' });
 }
 
-// 保存当前用户的编辑器设置
+/**
+ * 保存当前用户的编辑器设置
+ * @param data 编辑器设置
+ */
 export async function saveEditorSettings(data: EditorSettingsParams) {
   return request('/api/user/editor-settings', {
     method: 'PUT',

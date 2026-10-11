@@ -8,12 +8,12 @@ import styles from './index.less';
 
 const LoginPage: React.FC = () => {
   const dispatch = useDispatch();
-  const loading = useShallowSelector((state: any) => state.user.loading);
+  const loading = useShallowSelector((state: any) => state.userLogin.loading);
 
   // 登录成功/失败提示由 model 统一处理，页面组件只负责调用
   const handleSubmit = async (values: any) => {
     await dispatch({
-      type: 'user/handleLogin',
+      type: 'userLogin/handleLogin',
       payload: values,
     });
   };

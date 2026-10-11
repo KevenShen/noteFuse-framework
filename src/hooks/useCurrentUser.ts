@@ -10,6 +10,8 @@ import { useShallowSelector } from './useShallowSelector';
 interface RootState {
   user: {
     currentUser: CurrentUser | null;
+  };
+  userLogin: {
     loading: boolean;
   };
 }
@@ -40,7 +42,7 @@ const useCurrentUser = (): UseCurrentUserResult => {
     (state: RootState) => state.user.currentUser,
   );
 
-  const loading = useShallowSelector((state: RootState) => state.user.loading);
+  const loading = useShallowSelector((state: RootState) => state.userLogin.loading);
 
   const currentUser = dvaCurrentUser || initialState?.currentUser || null;
 
@@ -54,7 +56,7 @@ const useCurrentUser = (): UseCurrentUserResult => {
     // 条件：有 Token、无用户数据、当前没有正在进行的请求
     if (token && !currentUserRef.current && !fetchingRef) {
       fetchingRef = true;
-      dispatch({ type: 'user/fetchCurrentUser' }).finally(() => {
+      dispatch({ type: 'userLogin/fetchCurrentUser' }).finally(() => {
         fetchingRef = false;
       });
     }
@@ -64,7 +66,7 @@ const useCurrentUser = (): UseCurrentUserResult => {
   const refresh = useCallback(() => {
     if (fetchingRef) return; // 防止手动连续点击触发重复请求
     fetchingRef = true;
-    dispatch({ type: 'user/fetchCurrentUser' }).finally(() => {
+    dispatch({ type: 'userLogin/fetchCurrentUser' }).finally(() => {
       fetchingRef = false;
     });
   }, [dispatch]);

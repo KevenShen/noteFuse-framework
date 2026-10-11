@@ -13,7 +13,10 @@ export type { DocState } from './doc';
 export type { DocEditorState, EditorMode, RightPanelTab } from './docEditor';
 
 // ==================== 用户域 ====================
-export type { CurrentUser } from './user';
+export type { CurrentUser, UserState } from './user';
+export type { UserLoginState } from './userLogin';
+export type { UserRegisterState } from './userRegister';
+export type { UserResetPasswordState } from './userResetPassword';
 
 // ==================== 标签域 ====================
 export type { TagState } from './tag';

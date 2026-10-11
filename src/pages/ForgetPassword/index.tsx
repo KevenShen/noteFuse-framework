@@ -13,13 +13,13 @@ const ForgetPasswordPage: React.FC = () => {
   });
   const { step, email } = state;
   const dispatch = useDispatch();
-  const loading = useShallowSelector((state: any) => state.user.loading);
+  const loading = useShallowSelector((state: any) => state.userResetPassword.loading);
 
   // 第一步：发送验证码
   // 成功/失败提示由 model 统一处理，页面组件根据返回值判断是否成功，成功后执行业务逻辑
   const handleSendCode = async (values: any) => {
     const result = await dispatch({
-      type: 'user/handleSendResetCode',
+      type: 'userResetPassword/handleSendResetCode',
       payload: values,
     });
     if (result) {
@@ -31,7 +31,7 @@ const ForgetPasswordPage: React.FC = () => {
   // 成功/失败提示由 model 统一处理
   const handleReset = async (values: any) => {
     await dispatch({
-      type: 'user/handleResetPassword',
+      type: 'userResetPassword/handleResetPassword',
       payload: {
         ...values,
         email, // 带上第一步输入的邮箱

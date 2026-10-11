@@ -97,7 +97,7 @@ const SubPageLayout: React.FC<SubPageLayoutProps> = ({
   useEffect(() => {
     const token = localStorage.getItem('note_fuse_token');
     if (token && !currentUser) {
-      dispatch({ type: 'user/fetchCurrentUser' });
+      dispatch({ type: 'userLogin/fetchCurrentUser' });
     }
   }, [currentUser, dispatch]);
 
@@ -156,7 +156,7 @@ const SubPageLayout: React.FC<SubPageLayoutProps> = ({
       danger: true,
       onClick: () => {
         setInitialState((s: any) => ({ ...s, currentUser: null }));
-        dispatch({ type: 'user/handleLogout' });
+        dispatch({ type: 'userLogin/handleLogout' });
       },
     },
   ];

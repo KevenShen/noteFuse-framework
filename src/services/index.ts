@@ -13,7 +13,6 @@ export {
   updateProject,
   deleteProject,
   toggleProjectTop,
-  categoryListToTree,
 } from './project';
 
 /** 文集分类管理 */
@@ -71,20 +70,25 @@ export {
 
 // ==================== 用户域 ====================
 
+/** 用户登录/登出/当前用户 */
+export { login, logout, getCurrentUser } from './userLogin';
+
+/** 用户注册 */
+export { register } from './userRegister';
+export type { RegisterParams } from './userRegister';
+
+/** 重置密码（忘记密码） */
+export { sendResetCode, resetPassword } from './userResetPassword';
+export type { ResetPasswordParams } from './userResetPassword';
+
+/** 用户资料/设置 */
 export {
-  getCurrentUser,
-  login,
-  logout,
-  register,
-  sendResetCode,
-  resetPassword,
   updateProfile,
   changePassword,
   getEditorSettings,
   saveEditorSettings,
 } from './user';
 export type {
-  RegisterParams,
   UpdateProfileParams,
   ChangePasswordParams,
   EditorSettingsParams,
