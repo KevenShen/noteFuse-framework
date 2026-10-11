@@ -1,0 +1,272 @@
+// src/pages/Tags/index.less
+// 标签页面样式（左右布局：左侧分类面板 + 右侧文档列表）
+
+// ==================== 页面容器 ====================
+.tags-page {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+// ==================== 通用 ====================
+.tags-icon-blue {
+  color: #1890ff;
+}
+
+.tags-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tags-empty {
+  padding: 40px 0;
+}
+
+.tags-avatar {
+  background-color: #1890ff;
+}
+
+.tags-item-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #262626;
+}
+
+.tags-item-tag {
+  margin: 0;
+}
+
+.tags-item-meta {
+  font-size: 13px;
+  color: #8c8c8c;
+}
+
+.tags-item-summary {
+  font-size: 12px;
+}
+
+.tags-pagination {
+  padding: 12px 20px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+// ==================== 左侧标签分类面板 ====================
+.tag-category-card {
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+
+  // 分类选择 Dropdown 按钮
+  .tag-category-dropdown {
+    margin-bottom: 16px;
+
+    .tag-category-btn {
+      width: 100%;
+      justify-content: flex-start;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      .tag-category-btn-name {
+        flex: 1;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tag-category-clear {
+        font-size: 10px;
+        color: #8c8c8c;
+        cursor: pointer;
+        padding: 2px;
+        border-radius: 2px;
+        transition: all 0.2s;
+
+        &:hover {
+          color: #ff4d4f;
+          background: #fff1f0;
+        }
+      }
+
+      .dropdown-icon {
+        font-size: 10px;
+        color: #8c8c8c;
+      }
+    }
+  }
+
+  // 标签横向排列区
+  .tag-category-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 40px;
+    align-items: flex-start;
+  }
+
+  // 添加标签行
+  .tag-add-row {
+    margin-bottom: 12px;
+  }
+
+  // 添加标签表单
+  .tag-add-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  // 编辑标签表单
+  .tag-edit-form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  // 颜色选择器
+  .tag-color-picker {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+
+    .tag-color-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+
+      &:hover {
+        transform: scale(1.2);
+      }
+
+      &.active {
+        border-color: #fff;
+        box-shadow: 0 0 0 2px #1890ff;
+      }
+    }
+
+    .tag-color-dot-sm {
+      width: 12px;
+      height: 12px;
+    }
+  }
+
+  .tag-color-picker-sm {
+    gap: 3px;
+  }
+
+  // 标签项包装（含操作按钮）
+  .tag-item-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+
+    &:hover {
+      .tag-item-actions {
+        opacity: 1;
+      }
+    }
+  }
+
+  .tag-edit-input {
+    width: 120px;
+  }
+
+  .tag-item-actions {
+    display: inline-flex;
+    opacity: 0;
+    transition: opacity 0.2s;
+    margin-left: -4px;
+  }
+
+  .tag-action-btn {
+    padding: 0 2px;
+    font-size: 12px;
+  }
+
+  .tag-checkable {
+    margin: 0;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: all 0.2s;
+
+    &:hover {
+      opacity: 0.8;
+    }
+
+    &.checked {
+      font-weight: 500;
+    }
+
+    .tag-usage-count {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-left: 2px;
+    }
+
+    .tag-close-icon {
+      margin-left: 6px;
+      font-size: 10px;
+      opacity: 0.8;
+      cursor: pointer;
+      transition: opacity 0.2s;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
+}
+
+// ==================== 分类管理器弹窗 ====================
+.tag-category-create {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+// 分类折叠箭头
+.category-collapse-arrow {
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #f0f0f0;
+  }
+}
+
+// ==================== 右侧标签文档列表 ====================
+.tag-doc-card {
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+
+  .tag-doc-item {
+    padding: 14px 20px;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #fafafa;
+    }
+  }
+}
+
+// ==================== 响应式适配 ====================
+@media (max-width: 768px) {
+  .tags-page {
+    padding: 12px;
+  }
+}

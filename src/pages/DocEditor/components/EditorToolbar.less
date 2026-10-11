@@ -1,0 +1,34 @@
+// src/pages/DocEditor/components/EditorToolbar.less
+// 编辑器预览/编辑切换按钮样式
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.editor-mode-toggle {
+  border-radius: 6px !important;
+  transition: all 0.2s;
+
+  &.active {
+    background: #1890ff;
+    color: #fff;
+    border-color: #1890ff;
+
+    &:hover {
+      background: #40a9ff;
+      color: #fff;
+      border-color: #40a9ff;
+    }
+  }
+
+  &:not(.active):hover {
+    color: #1890ff;
+    border-color: #1890ff;
+  }
+}
+
+.editor-mode-btn-text {
+  margin-left: 4px;
+  font-size: 13px;
+}

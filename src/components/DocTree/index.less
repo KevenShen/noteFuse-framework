@@ -1,0 +1,277 @@
+/**
+ * DocTree 组件样式
+ */
+
+.doctree {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #fff;
+}
+
+// 顶部头部（搜索框 + 新增按钮，同一行）
+.doctree-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 8px;
+}
+
+// 搜索框（占主要空间）
+.doctree-search {
+  flex: 1;
+  min-width: 0;
+}
+
+// 操作按钮容器（固定宽度，不收缩）
+.doctree-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+// 树容器
+.doctree-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 2px;
+  -webkit-overflow-scrolling: touch;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #d9d9d9;
+    border-radius: 3px;
+
+    &:hover {
+      background: #bfbfbf;
+    }
+  }
+}
+
+// 树节点
+.doctree-tree {
+  background: transparent;
+
+  // 确保 treenode 是 flex 布局，图标和内容在同一行
+  .ant-tree-treenode {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    line-height: 24px;
+  }
+
+  // 展开/折叠三角形
+  .ant-tree-switcher {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 8px;
+    height: 24px;
+    line-height: 24px;
+
+    .ant-tree-switcher-icon {
+      font-size: 10px;
+      line-height: 1;
+    }
+  }
+
+  // 图标元素
+  .ant-tree-iconEle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    margin-right: 2px;
+
+    .anticon {
+      font-size: 14px;
+      line-height: 1;
+    }
+  }
+
+  // 内容包装器
+  .ant-tree-node-content-wrapper {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    line-height: 24px;
+    padding: 0 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+
+    &:hover {
+      background-color: #f5f5f5;
+    }
+  }
+
+  // 标题元素
+  .ant-tree-title {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    line-height: 24px;
+    overflow: hidden;
+  }
+
+  .ant-tree-node-selected {
+    background-color: #e6f4ff !important;
+
+    &:hover {
+      background-color: #bae0ff !important;
+    }
+  }
+}
+
+// 节点标题
+.doctree-node-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+}
+
+.doctree-node-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+// 节点操作按钮
+.doctree-node-action {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 0 4px !important;
+  height: 20px !important;
+
+  .anticon {
+    font-size: 12px;
+  }
+}
+
+// hover 时显示操作按钮
+.ant-tree-treenode:hover .doctree-node-action {
+  opacity: 1;
+}
+
+// 图标
+.doctree-icon-category {
+  color: #faad14;
+}
+
+.doctree-icon-doc {
+  color: #1890ff;
+}
+
+// 版本节点图标
+.doctree-icon-version-published {
+  color: #52c41a;
+}
+
+.doctree-icon-version-draft {
+  color: #faad14;
+}
+
+.doctree-icon-version-archived {
+  color: #8c8c8c;
+}
+
+// 文档节点
+.doctree-doc-node {
+  .doctree-node-name {
+    font-weight: 500;
+  }
+}
+
+// 版本节点
+.doctree-version-node {
+  padding-left: 8px;
+  border-left: 2px solid transparent;
+  transition: all 0.2s;
+
+  .doctree-node-name {
+    font-size: 12px;
+    color: #595959;
+  }
+
+  &.is-current {
+    border-left-color: #1890ff;
+    background: linear-gradient(90deg, rgba(24, 144, 255, 0.08) 0%, transparent 100%);
+
+    .doctree-node-name {
+      color: #1890ff;
+      font-weight: 600;
+    }
+  }
+
+  // 选中状态（点击版本后高亮）
+  &.is-selected {
+    border-left-color: #1890ff;
+    background: rgba(24, 144, 255, 0.15);
+
+    .doctree-node-name {
+      color: #1890ff;
+      font-weight: 600;
+    }
+  }
+}
+
+// 响应式：移动端
+@media screen and (max-width: 768px) {
+  .doctree-search {
+    padding: 8px;
+  }
+
+  .doctree-tree-container {
+    padding: 4px;
+  }
+
+  .doctree-node-name {
+    font-size: 14px;
+  }
+
+  // 移动端始终显示操作按钮
+  .doctree-node-action {
+    opacity: 1;
+  }
+}
+
+// 文档标题 Tooltip 样式（显示副标题 summary）
+.doctree-doc-tooltip {
+  .ant-tooltip-inner {
+    max-width: 320px;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0.85);
+  }
+
+  .ant-tooltip-arrow-content {
+    background-color: rgba(0, 0, 0, 0.85);
+  }
+}

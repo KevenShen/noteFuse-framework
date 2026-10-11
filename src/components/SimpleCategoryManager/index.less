@@ -1,0 +1,142 @@
+.simple-category-manager {
+  width: 100%;
+
+  // 工具栏
+  .scm-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    &-left {
+      flex: 1;
+      min-width: 0;
+    }
+
+    &-right {
+      flex-shrink: 0;
+    }
+  }
+
+  .scm-selected-count {
+    font-size: 13px;
+    color: rgba(0, 0, 0, 0.65);
+
+    strong {
+      color: #1890ff;
+      font-weight: 500;
+    }
+  }
+
+  .ant-table {
+    background: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  // 紧凑行高
+  .ant-table-thead > tr > th {
+    font-weight: 500;
+    background: #fafafa;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .ant-table-tbody > tr > td {
+    padding: 8px 12px;
+  }
+
+  // 多选框列
+  .ant-table-selection-column {
+    padding: 8px 8px !important;
+    text-align: center;
+    width: 48px;
+    min-width: 48px;
+  }
+
+  // 操作列紧凑
+  .ant-table-cell.action-col {
+    padding: 8px 8px !important;
+    white-space: nowrap;
+
+    .ant-btn-link {
+      padding: 0 6px;
+      font-size: 12px;
+      height: auto;
+      line-height: 1.5;
+    }
+  }
+
+  // 颜色标签列
+  .ant-tag {
+    margin: 0;
+    font-size: 12px;
+    line-height: 20px;
+    height: 22px;
+  }
+
+  // 拖拽排序
+  .drag-sort-row {
+    cursor: move;
+
+    &.row-dragging {
+      opacity: 0.4;
+      background: #e6f7ff !important;
+    }
+
+    &.drop-before > td {
+      border-top: 2px solid #1890ff !important;
+    }
+
+    &.drop-after > td {
+      border-bottom: 2px solid #1890ff !important;
+    }
+  }
+
+  // 斑马纹
+  .ant-table-tbody > tr:nth-child(even) > td {
+    background: #fcfcfc;
+  }
+
+  .ant-table-tbody > tr:hover > td {
+    background: #f0f7ff !important;
+  }
+}
+
+// 移动端适配
+@media (max-width: 768px) {
+  .simple-category-manager {
+    .scm-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+
+      &-right {
+        display: flex;
+        justify-content: flex-end;
+      }
+    }
+
+    .ant-table-tbody > tr > td {
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .ant-table-thead > tr > th {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
+    .drag-sort-row {
+      cursor: default;
+    }
+
+    .ant-table-cell.action-col {
+      .ant-btn-link {
+        padding: 0 3px;
+        font-size: 11px;
+      }
+    }
+  }
+}

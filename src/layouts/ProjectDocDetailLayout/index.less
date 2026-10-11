@@ -1,0 +1,473 @@
+// DocLayout 组件样式 - 正确结构：左栏整列，右侧主区域（工具栏+内容）上下布局
+.doc-layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: #fff;
+  color: rgba(0,0,0,0.85);
+
+  &.dark-mode {
+    background: #121212;
+    color: rgba(255,255,255,0.85);
+  }
+}
+
+// 左侧目录栏 - 整列高度，从顶到底
+.doc-sidebar {
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+// 右侧工具坞 - 整列高度，从顶到底，天然固定不随内容滚动
+.doc-right-panel {
+  flex-shrink: 0;
+  background: #fff;
+  border-left: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.doc-right-panel-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.doc-right-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.doc-sidebar-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+  gap: 4px;
+  background: #fff;
+}
+
+.sidebar-back-btn {
+  flex-shrink: 0;
+}
+
+.sidebar-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  padding-right: 32px;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #1890ff;
+  }
+}
+
+// 目录搜索框
+.sidebar-search {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+
+  .dark-mode & {
+    border-bottom-color: #303030;
+  }
+}
+
+// 目录内容区
+.doc-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+// 拖拽条
+.doc-resizer,
+.doc-right-resizer {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  transition: background 0.2s;
+  z-index: 10;
+  height: 100%;
+
+  &:hover, &.resizing {
+    background: #1890ff;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -2px;
+    right: -2px;
+    bottom: 0;
+  }
+}
+
+// 右侧主区域 - 上下布局：工具栏 + 内容
+.doc-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  height: 100%;
+}
+
+// 顶部工具栏 - 在主区域顶部
+.doc-toolbar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+  z-index: 10;
+  // 滚动隐藏/显示过渡动画
+  transition: transform 0.3s ease, opacity 0.3s ease, height 0.3s ease, margin 0.3s ease, padding 0.3s ease, border 0.3s ease;
+  transform-origin: top;
+
+  // 隐藏状态：向上平移 + 透明 + 高度为0
+  &.toolbar-hidden {
+    transform: translateY(-100%);
+    opacity: 0;
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+    margin-bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+}
+
+// 内容区 - 工具栏下面，滚动
+.doc-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #fff;
+  font-size: var(--doc-font-size, 18px);
+
+  // 全面覆盖 Ant Design 组件内部字体，使其随内容区基础字体缩放
+  .ant-typography,
+  .ant-typography p,
+  .ant-typography span,
+  .ant-typography div,
+  .ant-typography li,
+  .ant-tabs-tab,
+  .ant-tabs-tab-btn,
+  .ant-list-item,
+  .ant-list-item-meta-title,
+  .ant-list-item-meta-description,
+  .ant-list-item-meta-description p,
+  .ant-tag,
+  p, span, li, a {
+    font-size: inherit !important;
+  }
+
+  // 标题按比例缩放
+  h1, .ant-typography h1 { font-size: 1.8em !important; }
+  h2, .ant-typography h2 { font-size: 1.5em !important; }
+  h3, .ant-typography h3 { font-size: 1.3em !important; }
+  h4, .ant-typography h4 { font-size: 1.15em !important; }
+  h5, .ant-typography h5 { font-size: 1.05em !important; font-weight: 600; }
+
+  &:fullscreen,
+  &:-webkit-full-screen,
+  &:-moz-full-screen,
+  &:-ms-fullscreen {
+    padding: 0;
+    background: #fff !important;
+    overflow-y: auto;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    top: 0;
+    left: 0;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  &.content-fullscreen {
+    padding: 0;
+    background: #fff !important;
+    width: 100%;
+    height: 100%;
+    transform: translateZ(0);
+
+    // 移动端全屏无留白，占满屏幕
+    @media (max-width: 768px) {
+      .doc-content-wrapper {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .doc-detail {
+        padding: 16px 12px !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 0 !important;
+        min-height: 100vh !important;
+      }
+    }
+
+    .doc-content-wrapper {
+      padding: 20px 16px !important;
+      max-width: 1360px !important;
+      margin: 0 auto !important;
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .doc-detail,
+    .project-overview {
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      padding: 32px 48px !important;
+      min-height: calc(100vh - 40px) !important;
+      flex: 1;
+      max-width: 1000px !important;
+      margin: 0 !important;
+      background: #fff;
+      border-radius: 8px !important;
+    }
+
+    .doc-outline {
+      flex: 0 0 240px;
+      width: 240px;
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      display: flex !important;
+    }
+  }
+
+  .dark-mode & {
+    background: #121212;
+    &:fullscreen,
+    &:-webkit-full-screen,
+    &:-moz-full-screen,
+    &:-ms-fullscreen {
+      background: #121212 !important;
+    }
+    &.content-fullscreen {
+      background: #121212 !important;
+    }
+  }
+}
+
+.doc-content-wrapper {
+  width: 100%;
+  height: 100%;
+}
+
+// 目录树样式
+.doc-tree {
+  .ant-tree-node-content-wrapper {
+    display: inline-flex;
+    align-items: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+
+  .ant-tree-switcher {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ant-tree-iconEle {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+
+  .ant-tree-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+  }
+
+  .ant-tree-treenode {
+    display: flex;
+    align-items: center;
+    padding: 0;
+  }
+
+  .ant-tree-node-content-wrapper:hover {
+    background: rgba(0,0,0,0.04);
+  }
+
+  .ant-tree-node-selected {
+    background: #e6f7ff !important;
+    color: #1890ff;
+  }
+}
+
+// ==================== 移动端布局 - 上下结构：工具栏 + 内容 ====================
+.doc-layout-mobile {
+  flex-direction: column;
+
+  .doc-sidebar,
+  .doc-resizer,
+  .doc-right-resizer {
+    display: none;
+  }
+
+  .doc-main {
+    width: 100%;
+  }
+
+  .doc-toolbar {
+    padding: 0 4px;
+    height: 44px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+
+    // 隐藏状态：移动端使用 absolute 定位向上移出
+    &.toolbar-hidden {
+      position: absolute;
+      transform: translateY(-100%);
+      opacity: 0;
+      height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+      overflow: hidden;
+      pointer-events: none;
+    }
+  }
+
+  .doc-content {
+    flex: 1;
+  }
+
+  .doc-sidebar-content {
+    padding: 8px 0;
+  }
+
+  .sidebar-search {
+    padding: 8px 12px;
+    margin: 0;
+  }
+}
+
+// ==================== 移动端抽屉样式 ====================
+.mobile-drawer-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.25s ease;
+
+  &.show {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+.mobile-drawer-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 260px;
+  max-width: 70vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 1001;
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+
+  &.show {
+    transform: translateX(0);
+  }
+}
+
+.mobile-drawer-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 8px;
+  font-weight: 500;
+  background: #fafafa;
+}
+
+// 深色模式
+.dark-mode {
+  .doc-sidebar {
+    background: #1f1f1f;
+    border-right-color: #303030;
+  }
+  .doc-sidebar-header {
+    background: #1f1f1f;
+    border-bottom-color: #303030;
+  }
+  .doc-toolbar {
+    background: #1f1f1f;
+    border-bottom-color: #303030;
+  }
+  .mobile-drawer-sidebar {
+    background: #1f1f1f;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.3);
+
+    .mobile-drawer-header {
+      background: #1f1f1f;
+      border-bottom-color: #303030;
+      color: rgba(255,255,255,0.85);
+    }
+  }
+}

@@ -1,0 +1,75 @@
+.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #faad14 0%, #d48806 100%);
+  padding: 24px;
+}
+
+.card {
+  width: 420px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+  :global {
+    .ant-card-head {
+      text-align: center;
+      border-bottom: none;
+      padding: 24px 24px 0;
+
+      .ant-card-head-title {
+        font-size: 24px;
+        font-weight: 600;
+        padding: 12px 0;
+      }
+    }
+
+    .ant-card-body {
+      padding: 24px;
+    }
+  }
+}
+
+.steps {
+  margin-bottom: 32px;
+}
+
+.actions {
+  text-align: center;
+  margin-top: 16px;
+
+  a {
+    color: #1890ff;
+    cursor: pointer;
+  }
+}
+
+.tips {
+  margin-top: 16px;
+}
+
+@media screen and (max-width: 768px) {
+  .container {
+    padding: 0;
+    background: #fff;
+    align-items: flex-start;
+    padding-top: 40px;
+  }
+
+  .card {
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+
+    :global {
+      .ant-card-head {
+        padding: 0 24px;
+      }
+
+      .ant-card-body {
+        padding: 24px;
+      }
+    }
+  }
+}

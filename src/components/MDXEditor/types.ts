@@ -1,7 +1,8 @@
-import type { MDXEditorMethods, ViewMode } from '@mdxeditor/editor';
-import type React from 'react';
+import type { MDXEditorMethods, RealmPlugin, ViewMode } from '@mdxeditor/editor';
 import type { FormInstance } from 'antd';
-import type { ToolbarButtonKey } from './constants';
+import type { MutableRefObject } from 'react';
+import type React from 'react';
+import type { ToolbarButtonKey } from './components';
 
 /** 扩展视图模式：在官方 rich-text/source/diff 基础上新增 split */
 export type ExtendedViewMode = ViewMode | 'split';
@@ -10,42 +11,42 @@ export type ExtendedViewMode = ViewMode | 'split';
 export interface MDXEditorProps {
   /** markdown内容 */
   value: string;
+  /** 默认视图模式 */
+  defaultViewMode?: ExtendedViewMode;
+  /** 分栏模式下左右栏宽度比例（0-1），默认 0.5 */
+  splitRatio?: number;
   /** 是否自动聚焦 */
   autoFocus?: boolean | object;
-  /** 内容变化回调 */
-  onChange?: (value: string) => void;
-  /** 只读模式 */
-  readOnly?: boolean;
-  /** 编辑器高度 */
-  height?: number | string;
   /** 占位符 */
   placeholder?: string;
+  /** 只读模式 */
+  readOnly?: boolean;
+  /** 是否显示文档目录（默认 false） */
+  showToc?: boolean;
   /** 是否显示工具栏 */
   showToolbar?: boolean;
   /** 工具栏按钮配置，不传则显示全部 */
   toolbarButtons?: ToolbarButtonKey[];
   /** 自定义插件 */
-  extraPlugins?: any[];
+  extraPlugins?: RealmPlugin[];
+  /** 编辑器高度 */
+  height?: number | string;
+  /** 编辑器类名 */
+  className?: string;
+  /** 内容变化回调 */
+  onChange?: (value: string) => void;
   /** 自定义工具栏内容 */
   customToolbarContent?: React.ReactNode;
   /** 是否启用自定义组件插入 */
   enableCustomComponents?: boolean;
-  /** 编辑器类名 */
-  className?: string;
   /** 外部传入历史基准文本 */
   oldVersionMarkdown?: string;
-  /** 内容失焦回调 */
-  onBlur?: () => void;
   /** 保存回调 */
   onSave?: () => void;
+  /** 内容失焦回调 */
+  onBlur?: () => void;
   /** 视图切换回调 */
   onViewModeChange?: (mode: ExtendedViewMode) => void;
-  /** 默认视图模式 */
-  defaultViewMode?: ExtendedViewMode;
-  /** 分栏模式下左右栏宽度比例（0-1），默认 0.5 */
-  splitRatio?: number;
-  /** 是否显示文档目录（默认 false） */
-  showToc?: boolean;
 }
 
 // ==================== 对外暴露的 ref 方法 ====================
@@ -64,6 +65,8 @@ export interface MDXEditorRef {
   getViewMode: () => ExtendedViewMode;
   /** 获取光标位置 */
   getCursorPosition?: () => EditorCursorPos;
+  /** 滚动到指定锚点（h1-h6 标题的 id） */
+  scrollToAnchor: (anchorId: string, offset?: number) => void;
 }
 
 // ==================== 自定义组件配置 ====================
@@ -115,8 +118,18 @@ export interface EditorViewLike {
   state: {
     doc: {
       toString: () => string;
-      lineAt: (n: number) => { from: number; text: string; to: number; number: number };
-      line: (n: number) => { from: number; text: string; to: number; number: number };
+      lineAt: (n: number) => {
+        from: number;
+        text: string;
+        to: number;
+        number: number;
+      };
+      line: (n: number) => {
+        from: number;
+        text: string;
+        to: number;
+        number: number;
+      };
       length: number;
       sliceDoc: (a: number, b: number) => string;
     };
@@ -125,4 +138,19 @@ export interface EditorViewLike {
   };
   dispatch: (spec: Record<string, unknown>) => void;
   focus: () => void;
+  /** 获取指定位置所在行的像素块信息（用于精确滚动） */
+  lineBlockAt: (pos: number) => {
+    top: number;
+    height: number;
+    from: number;
+    to: number;
+  };
+  /** CodeMirror 滚动容器 DOM */
+  scrollDOM: HTMLElement;
 }
+
+/** CodeMirror EditorView Ref 类型 */
+export type EditorViewRef = MutableRefObject<EditorViewLike | null>;
+
+/** 分栏预览编辑器 Ref 类型 */
+export type PreviewEditorRef = MutableRefObject<MDXEditorMethods | null>;

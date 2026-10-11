@@ -1,0 +1,805 @@
+.doc-editor-page {
+  padding: 0 24px 24px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  // 标题编辑区
+  .doc-title-editor {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 2px;
+
+    .title-input {
+      flex: 1;
+      font-size: 24px;
+      font-weight: 600;
+      padding: 2px 0;
+
+      &:focus {
+        box-shadow: none;
+      }
+    }
+
+    .title-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+
+      .save-hint {
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.45);
+      }
+    }
+  }
+
+  // 编辑器容器
+  .editor-container {
+    flex: 1;
+    min-height: 0;
+  }
+
+  // MDX 预览模式（MDXViewer 内部有自己的滚动容器，此处不设置 overflow）
+  .mdx-preview-wrapper {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  // Vditor 容器
+  .vditor-container {
+    height: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #d9d9d9;
+
+    :global(.vditor) {
+      border: none;
+    }
+  }
+
+  // 富文本占位
+  .rich-editor-placeholder {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed #d9d9d9;
+    border-radius: 8px;
+    background: #fafafa;
+
+    .placeholder-content {
+      text-align: center;
+      color: rgba(0, 0, 0, 0.45);
+
+      h3 {
+        margin: 0 0 8px;
+        font-weight: 500;
+      }
+
+      p {
+        margin: 0;
+        font-size: 13px;
+      }
+    }
+  }
+}
+
+// 编辑器类型选择下拉
+.editor-type-option {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+
+  .option-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.85);
+  }
+
+  .option-desc {
+    font-size: 11px;
+    color: rgba(0, 0, 0, 0.45);
+  }
+}
+
+// 左侧边栏
+.editor-sidebar {
+  padding: 0px 2px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  // 自定义手风琴折叠面板
+  .custom-accordion {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    // 每个面板
+    .custom-accordion-item {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+
+      // 展开的面板：占据剩余空间
+      &.active {
+        flex: 1;
+        min-height: 0;
+      }
+    }
+
+    // 面板标题
+    .custom-accordion-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      flex-shrink: 0;
+      user-select: none;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background-color: rgba(0, 0, 0, 0.02);
+      }
+    }
+
+    // 展开图标
+    .custom-accordion-expand-icon {
+      font-size: 10px;
+      color: rgba(0, 0, 0, 0.45);
+      margin-right: 6px;
+      flex-shrink: 0;
+      width: 12px;
+      text-align: center;
+    }
+
+    // 面板内容
+    .custom-accordion-content {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .custom-accordion-content-box {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 8px 0;
+      overflow: hidden;
+    }
+
+    .collapse-label {
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.85);
+      flex: 1;
+
+      .anticon {
+        margin-right: 6px;
+        font-size: 14px;
+      }
+
+      .ant-tag {
+        font-size: 10px;
+        padding: 0 4px;
+        line-height: 16px;
+        height: 16px;
+      }
+    }
+  }
+
+  // 文档目录
+  .sidebar-doc-tree {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  // 标签管理
+  .sidebar-tag-manager {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #f0f0f0;
+    border-radius: 6px;
+  }
+
+  // 编辑器设置内容
+  .sidebar-settings-content {
+    .setting-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+    }
+  }
+
+  .doc-meta {
+    .meta-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 12px;
+
+      .meta-label {
+        color: rgba(0, 0, 0, 0.45);
+      }
+
+      .meta-value {
+        color: rgba(0, 0, 0, 0.85);
+      }
+    }
+  }
+
+  .setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.65);
+  }
+}
+
+// ==================== 右侧工具坞 - 模板列表样式 ====================
+.doc-right-panel-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  .sidebar-header {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+    background: #fafafa;
+
+    .sidebar-tabs {
+      display: flex;
+      gap: 2px;
+
+      .tab-btn {
+        &.active {
+          color: #1890ff;
+          background: rgba(24, 144, 255, 0.1);
+        }
+      }
+    }
+  }
+
+  .template-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+
+    .template-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+
+      .template-count {
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.45);
+      }
+    }
+
+    .template-item {
+      padding: 10px 12px !important;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      background: #fff;
+      border: 1px solid #f0f0f0;
+      transition: all 0.2s;
+
+      &:hover {
+        border-color: #1890ff;
+        box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+      }
+
+      .template-item-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: rgba(0, 0, 0, 0.85);
+        cursor: pointer;
+        margin-bottom: 4px;
+
+        &:hover {
+          color: #1890ff;
+        }
+      }
+
+      .template-item-meta {
+        font-size: 11px;
+        color: rgba(0, 0, 0, 0.45);
+      }
+    }
+  }
+
+  .outline-placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+// ==================== 历史版本样式 ====================
+.version-item {
+  padding: 12px !important;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #1890ff;
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+  }
+
+  &.version-current {
+    border-color: #52c41a;
+    background: #f6ffed;
+  }
+
+  .version-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #1890ff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .version-title {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.85);
+  }
+
+  .version-meta {
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
+    margin-top: 4px;
+  }
+}
+
+// 版本列表容器（右栏内）
+.version-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+
+  .version-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+
+    .version-count {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.45);
+      font-weight: 500;
+    }
+  }
+
+  // 搜索框样式优化
+  .ant-input-affix-wrapper {
+    border-radius: 6px;
+  }
+
+  .version-item {
+    position: relative;
+    padding: 12px !important;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: #fff;
+    border: 1px solid #f0f0f0;
+    transition: all 0.2s ease;
+    overflow: hidden;
+
+    &:hover {
+      border-color: #1890ff;
+      box-shadow: 0 2px 12px rgba(24, 144, 255, 0.12);
+      transform: translateY(-1px);
+    }
+
+    // 当前版本：左侧绿色边框条 + 柔和背景
+    &.version-current {
+      border-color: #b7eb8f;
+      background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+
+      &::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: #52c41a;
+        border-radius: 3px 0 0 3px;
+      }
+    }
+
+    // List.Item.Meta 布局优化
+    :global(.ant-list-item-meta) {
+      align-items: flex-start;
+      margin: 0;
+    }
+
+    :global(.ant-list-item-meta-avatar) {
+      margin-right: 10px !important;
+    }
+
+    :global(.ant-list-item-meta-content) {
+      flex: 1;
+      min-width: 0;
+    }
+
+    :global(.ant-list-item-meta-title) {
+      margin-bottom: 4px !important;
+    }
+
+    :global(.ant-list-item-action) {
+      margin-left: 4px !important;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 0;
+
+      li {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      li:not(:last-child)::after {
+        display: none !important;
+      }
+    }
+
+    .version-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
+    }
+
+    .version-title {
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.85);
+      line-height: 1.4;
+
+      span {
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 120px;
+
+        &:hover {
+          color: #1890ff;
+        }
+      }
+
+      .ant-tag {
+        margin-left: 6px !important;
+        flex-shrink: 0;
+        font-size: 10px;
+        padding: 0 4px;
+        line-height: 16px;
+        height: 16px;
+      }
+    }
+
+    .version-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 11px;
+      color: rgba(0, 0, 0, 0.45);
+      margin-top: 2px;
+      line-height: 1.4;
+
+      span {
+        display: inline-flex;
+        align-items: center;
+      }
+    }
+
+    // 操作按钮样式优化
+    .ant-btn {
+      &.ant-btn-text {
+        padding: 0 4px;
+        font-size: 12px;
+
+        .anticon {
+          font-size: 14px;
+        }
+
+        &:hover {
+          background: rgba(24, 144, 255, 0.08);
+        }
+      }
+    }
+  }
+}
+
+// Snippet 片段列表容器（右栏内）
+.snippet-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+
+  .doc-editor-snippet-manager {
+    height: 100%;
+    padding: 12px;
+  }
+}
+
+// CodeTemplate 代码模板列表容器（右栏内）
+.code-template-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+
+  .doc-editor-code-template-manager {
+    height: 100%;
+    padding: 12px;
+  }
+}
+
+// 查看版本抽屉
+.version-view-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  .version-view-info {
+    flex-shrink: 0;
+  }
+
+  .version-view-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid #f0f0f0;
+    border-radius: 6px;
+  }
+}
+
+// 版本对比抽屉
+.version-compare-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  .compare-stats {
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+  }
+
+  .compare-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    border: 1px solid #f0f0f0;
+    border-radius: 6px;
+    padding: 8px;
+    background: #fafafa;
+
+    .compare-line {
+      display: flex;
+      padding: 2px 4px;
+      border-radius: 3px;
+
+      .line-num {
+        width: 40px;
+        flex-shrink: 0;
+        color: #999;
+        text-align: right;
+        padding-right: 8px;
+        user-select: none;
+      }
+
+      .line-content {
+        flex: 1;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      &.compare-added {
+        background: #f6ffed;
+        color: #389e0d;
+      }
+
+      &.compare-removed {
+        background: #fff1f0;
+        color: #cf1322;
+      }
+
+      &.compare-modified {
+        background: #fff7e6;
+        color: #d46b08;
+      }
+
+      &.compare-same {
+        color: #595959;
+      }
+    }
+  }
+}
+
+// 移动端适配
+@media (max-width: 768px) {
+  .doc-editor-page {
+    padding: 0 16px 16px;
+
+    .doc-title-editor {
+      .title-input {
+        font-size: 20px;
+      }
+    }
+  }
+}
+
+// 编辑模式提示条
+.edit-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+
+  &.outline-mode {
+    background: linear-gradient(135deg, #f9f0ff 0%, #efdbff 100%);
+    border: 1px solid #d3adf7;
+
+    .edit-mode-icon {
+      color: #722ed1;
+      font-size: 18px;
+    }
+
+    .edit-mode-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #531dab;
+      flex-shrink: 0;
+    }
+
+    .edit-mode-desc {
+      font-size: 12px;
+      color: #531dab;
+      flex: 1;
+      opacity: 0.8;
+    }
+  }
+}
+// 编辑器页面内容区高度适配
+.doc-editor-content {
+  height: 100%;
+  
+  .doc-editor-body {
+    height: calc(100% - 80px);
+  }
+}
+
+// 确保布局内容区对于编辑器页面不滚动
+.doc-content:has(.doc-editor-content) {
+  overflow: hidden;
+  padding: 0;
+}
+
+// ==================== 临时编辑模板提示条 ====================
+.template-edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, #fff7e6 0%, #fffbe6 100%);
+  border: 1px solid #ffd591;
+  border-radius: 6px;
+  flex-shrink: 0;
+
+  .template-edit-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .template-edit-icon {
+    color: #fa8c16;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .template-edit-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #d46b08;
+    flex-shrink: 0;
+  }
+
+  .template-edit-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #874d00;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+  }
+
+  .template-edit-tag {
+    flex-shrink: 0;
+  }
+
+  .template-edit-banner-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+}
+
+// 移动端适配
+@media (max-width: 768px) {
+  .template-edit-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+
+    .template-edit-banner-right {
+      width: 100%;
+      justify-content: flex-end;
+    }
+
+    .template-edit-name {
+      max-width: 150px;
+    }
+  }
+}

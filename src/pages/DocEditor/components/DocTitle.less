@@ -1,0 +1,105 @@
+// src/pages/DocEditor/components/DocTitle.less
+// 文档标题组件样式 - 支持响应式布局
+
+.doc-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+
+  // 移动端：垂直排列
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.doc-title-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  outline: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  // 编辑模式
+  &.edit-mode {
+    font-size: 18px;
+    font-weight: 600;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    background: #fff;
+    height: 36px;
+    padding: 0 12px;
+    color: #262626;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: text;
+    text-align: left;
+
+    &:focus {
+      border-color: #1890ff;
+      box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+    }
+
+    // 移动端编辑模式
+    @media (max-width: 768px) {
+      font-size: 16px;
+      height: 34px;
+    }
+  }
+
+  // 预览模式
+  &.preview-mode {
+    font-size: 24px;
+    font-weight: 700;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    height: auto;
+    min-height: 36px;
+    padding: 4px 0;
+    color: #1a1a1a;
+    cursor: default;
+    text-align: center;
+    line-height: 1.3;
+
+    // 移动端预览模式
+    @media (max-width: 768px) {
+      font-size: 20px;
+      min-height: 30px;
+    }
+  }
+}
+
+.doc-version-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #8c8c8c;
+
+  .version-tag {
+    margin: 0;
+    font-size: 10px;
+  }
+
+  .version-text {
+    white-space: nowrap;
+  }
+
+  .version-divider {
+    color: #bfbfbf;
+  }
+
+  // 移动端：居中显示
+  @media (max-width: 768px) {
+    font-size: 10px;
+    gap: 3px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

@@ -1,0 +1,91 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: auto;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+  @media screen and (max-width: 768px) {
+    background: #fff;
+  }
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  width: 100%;
+
+  a {
+    color: #1890ff;
+    cursor: pointer;
+
+    &:hover {
+      color: #40a9ff;
+    }
+  }
+}
+
+.prefixIcon {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.tips {
+  text-align: center;
+  margin-top: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+// 移动端适配
+@media screen and (max-width: 768px) {
+  :global {
+    .ant-pro-login-form-page {
+      max-width: 100% !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: #fff !important;
+      box-shadow: none !important;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .ant-pro-login-form-page-container {
+      padding: 24px !important;
+    }
+
+    .ant-pro-login-form-page-top {
+      margin-bottom: 32px !important;
+
+      .ant-pro-login-form-page-header {
+        justify-content: center;
+      }
+
+      .ant-pro-login-form-page-title {
+        font-size: 28px !important;
+      }
+
+      .ant-pro-login-form-page-sub-title {
+        text-align: center;
+      }
+    }
+
+    .ant-pro-login-form-page-main {
+      .ant-form-item {
+        margin-bottom: 20px;
+      }
+
+      .ant-input-affix-wrapper-lg {
+        padding: 8px 11px !important;
+        font-size: 16px !important;
+      }
+
+      .ant-btn-lg {
+        height: 44px !important;
+        font-size: 16px !important;
+      }
+    }
+  }
+}

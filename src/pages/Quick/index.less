@@ -1,0 +1,345 @@
+// src/pages/Quick/index.less
+// 快捷操作页面样式
+
+// ==================== 页面容器 ====================
+.quick-page {
+  // padding: 20px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+// ==================== 顶部分类筛选栏 ====================
+.quick-filter-wrapper {
+  background: #fff;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  border: 1px solid #f0f0f0;
+  transition: all 0.3s ease;
+}
+
+.quick-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.quick-filter-icon {
+  color: #1890ff;
+}
+
+.quick-filter-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.quick-filter-content {
+  padding: 12px 16px;
+  animation: slideDown 0.2s ease;
+}
+
+.quick-filter-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.quick-filter-btn {
+  border-radius: 6px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #1890ff;
+    color: #1890ff;
+  }
+}
+
+.quick-filter-dropdown-icon {
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.5;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// ==================== 快捷操作卡片 ====================
+.quick-grid-wrapper {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.quick-grid-tip {
+  padding-left: 20px;
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: #8c8c8c;
+  margin-bottom: 4px;
+}
+
+.quick-grid-loading {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 0;
+  color: #8c8c8c;
+}
+
+.quick-grid-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 0;
+  color: #bfbfbf;
+  font-size: 14px;
+}
+
+.quick-card {
+  position: relative;
+  text-align: center;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  transition: all 0.3s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: #1890ff;
+  }
+}
+
+// 操作类型标识（右上角小标签）
+.quick-card-type-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.2;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+
+  .quick-card:hover & {
+    opacity: 1;
+  }
+}
+
+// link 类型：蓝色
+.quick-card-type-link {
+  background: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+// action 类型：绿色
+.quick-card-type-action {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+// template 类型：橙色
+.quick-card-type-template {
+  background: #fff7e6;
+  color: #fa8c16;
+  border: 1px solid #ffd591;
+}
+
+.quick-card-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.quick-card-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.quick-card-desc {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  line-height: 1.4;
+  margin-top: 4px;
+  // 最多显示2行，超出省略
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 34px; // 固定高度，避免卡片高度不一致
+}
+
+// ==================== 分组面板 ====================
+.quick-group-panel {
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.quick-group-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.quick-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+
+  &:hover {
+    background: #f5f5f5;
+  }
+}
+
+.quick-group-name {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.quick-group-toggle {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.quick-group-items {
+  padding: 8px 0 4px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quick-group-item-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #e6f7ff;
+
+    .quick-group-item-remove {
+      opacity: 1;
+    }
+  }
+}
+
+.quick-group-item-icon {
+  font-size: 16px;
+}
+
+.quick-group-item-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.quick-group-item-remove {
+  font-size: 12px;
+  color: #ff4d4f;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.quick-group-empty {
+  font-size: 12px;
+  color: #bfbfbf;
+  padding: 8px;
+  text-align: center;
+}
+
+// ==================== 分组管理器 ====================
+.quick-group-create {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+// ==================== 响应式适配 ====================
+@media screen and (max-width: 768px) {
+  .quick-page {
+    padding: 12px;
+  }
+
+  .quick-filter-wrapper {
+    margin-bottom: 12px;
+  }
+
+  .quick-filter-header {
+    padding: 10px 12px;
+  }
+
+  .quick-filter-content {
+    padding: 10px 12px;
+  }
+
+  .quick-filter-btn {
+    font-size: 13px;
+    padding: 4px 10px;
+    height: 32px;
+  }
+
+  .quick-grid-wrapper {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .quick-card {
+    padding: 14px 10px;
+  }
+
+  .quick-card-icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+  }
+
+  .quick-card-name {
+    font-size: 13px;
+  }
+
+  .quick-card-desc {
+    font-size: 11px;
+    min-height: 30px;
+    -webkit-line-clamp: 2;
+  }
+
+  .quick-group-panel {
+    margin-bottom: 16px;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .quick-filter-header {
+    padding: 8px 10px;
+  }
+
+  .quick-filter-content {
+    padding: 8px 10px;
+  }
+
+  .quick-filter-btn {
+    font-size: 12px;
+    height: 30px;
+  }
+}

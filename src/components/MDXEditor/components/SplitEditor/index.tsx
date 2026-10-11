@@ -3,61 +3,53 @@
  * 左栏：CodeMirror 源码编辑器（可编辑）
  * 右栏：MDXEditor 富文本预览（只读，内联）
  *
- * 功能：左右栏内容实时同步（防抖）+ 滚动比例同步
+ * 功能：
+ * - 左右栏内容实时同步（防抖 150ms）
+ * - 基于标题锚点的分段滚动同步（替代比例同步，解决行高不一致导致的错位）
+ *
+ * 对外暴露：editorViewRef（源码编辑器）+ previewEditorRef（预览编辑器）
  */
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { EditorView } from '@codemirror/view';
-import { MDXEditor, type MDXEditorMethods } from '@mdxeditor/editor';
+import type { MDXEditorMethods } from '@mdxeditor/editor';
+import type { EditorViewLike } from '../../types';
+import React, { useCallback, useRef, useState } from 'react';
+import { useSplitScrollSync } from '../../hooks';
+import PreviewPane from './PreviewPane';
 import SourceCodeEditor from './SourceCodeEditor';
-import { createBasePlugins } from '../../plugins';
 
 export interface SplitEditorProps {
   value: string;
   onChange: (value: string) => void;
-  editorViewRef: React.MutableRefObject<EditorView | null>;
+  /** 左栏 CodeMirror EditorView 实例引用 */
+  editorViewRef: React.MutableRefObject<EditorViewLike | null>;
+  /** 右栏预览编辑器实例引用（分栏模式下访问完整 API） */
+  previewEditorRef?: React.MutableRefObject<MDXEditorMethods | null>;
   readOnly?: boolean;
   splitRatio?: number;
+  /** 是否启用滚动同步（默认 true） */
   scrollSync?: boolean;
 }
 
-/** 右栏只读预览（内联：仅分栏模式使用，无独立复用价值） */
-const PreviewPane: React.FC<{ value: string }> = ({ value }) => {
-  const editorRef = useRef<MDXEditorMethods | null>(null);
-  const lastValueRef = useRef(value);
-  const plugins = useMemo(() => createBasePlugins({ enableKeymap: false }), []);
-
-  useEffect(() => {
-    if (value !== lastValueRef.current && editorRef.current) {
-      lastValueRef.current = value;
-      editorRef.current.setMarkdown(value);
-    }
-  }, [value]);
-
-  return (
-    <div className="split-preview-editor">
-      <MDXEditor
-        ref={editorRef}
-        readOnly
-        markdown={value}
-        plugins={plugins}
-        contentEditableClassName="mdx-editor-content"
-      />
-    </div>
-  );
-};
-
+/** 左栏CodeMirror 源码编辑器（可编辑）（内联：仅分栏模式使用） */
 const SplitEditor: React.FC<SplitEditorProps> = ({
+  readOnly = false,
   value,
   onChange,
   editorViewRef,
-  readOnly = false,
+  previewEditorRef,
   splitRatio = 0.5,
   scrollSync = true,
 }) => {
   const [previewValue, setPreviewValue] = useState(value);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewScrollRef = useRef<HTMLDivElement>(null);
-  const isSyncingRef = useRef(false);
+
+  // 基于标题锚点的分段滚动同步
+  const { handleSourceScroll } = useSplitScrollSync({
+    editorViewRef,
+    previewScrollRef,
+    value,
+    enabled: scrollSync,
+  });
 
   /** 左栏内容变化 → 防抖更新右栏预览 */
   const handleSourceChange = useCallback(
@@ -69,31 +61,19 @@ const SplitEditor: React.FC<SplitEditorProps> = ({
     [onChange],
   );
 
-  /** 左栏滚动 → 比例同步右栏 */
-  const handleSourceScroll = useCallback(
-    (ratio: number) => {
-      if (!scrollSync || isSyncingRef.current) return;
-      const el = previewScrollRef.current;
-      if (!el) return;
-      isSyncingRef.current = true;
-      el.scrollTop = ratio * (el.scrollHeight - el.clientHeight);
-      requestAnimationFrame(() => {
-        isSyncingRef.current = false;
-      });
-    },
-    [scrollSync],
-  );
-
   return (
     <div className="split-editor-container">
       {/* 左栏：源码编辑器 */}
-      <div className="split-editor-left" style={{ width: `${splitRatio * 100}%` }}>
+      <div
+        className="split-editor-left"
+        style={{ width: `${splitRatio * 100}%` }}
+      >
         <div className="split-editor-pane-title">源码</div>
         <SourceCodeEditor
+          readOnly={readOnly}
           value={value}
           onChange={handleSourceChange}
           editorViewRef={editorViewRef}
-          readOnly={readOnly}
           onScroll={handleSourceScroll}
         />
       </div>
@@ -101,10 +81,13 @@ const SplitEditor: React.FC<SplitEditorProps> = ({
       <div className="split-editor-divider" />
 
       {/* 右栏：富文本预览 */}
-      <div className="split-editor-right" style={{ width: `${(1 - splitRatio) * 100}%` }}>
+      <div
+        className="split-editor-right"
+        style={{ width: `${(1 - splitRatio) * 100}%` }}
+      >
         <div className="split-editor-pane-title">预览</div>
         <div ref={previewScrollRef} className="split-preview-scroll-container">
-          <PreviewPane value={previewValue} />
+          <PreviewPane ref={previewEditorRef} value={previewValue} />
         </div>
       </div>
     </div>

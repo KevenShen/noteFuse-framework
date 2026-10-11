@@ -1,0 +1,168 @@
+// src/pages/DocEditor/components/EditorContent.less
+// 文档编辑页内容区样式
+
+// ==================== 大纲编辑模式提示条 ====================
+.outline-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, #fff7e6 0%, #fffbe6 100%);
+  border: 1px solid #ffd591;
+  border-radius: 6px;
+  animation: outlineBannerSlideIn 0.3s ease-out;
+
+  .outline-mode-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .outline-mode-icon {
+    font-size: 16px;
+    color: #fa8c16;
+  }
+
+  .outline-mode-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #d46b08;
+    white-space: nowrap;
+  }
+
+  .outline-mode-tag {
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  .outline-mode-desc {
+    font-size: 12px;
+    color: #8c8c8c;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 响应式：移动端布局调整
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+
+    .outline-mode-banner-left {
+      flex-wrap: wrap;
+    }
+
+    .outline-mode-desc {
+      width: 100%;
+      white-space: normal;
+    }
+  }
+}
+
+// 提示条滑入动画
+@keyframes outlineBannerSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// ==================== 版本对比编辑模式 ====================
+.version-edit-mode {
+  .version-edit-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 10px 16px;
+    background: linear-gradient(90deg, #e6f4ff 0%, #f0f5ff 100%);
+    border-bottom: 1px solid #91caff;
+    animation: versionBannerSlideIn 0.3s ease-out;
+
+    .version-edit-banner-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .version-edit-icon {
+      font-size: 16px;
+    }
+
+    .version-edit-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0958d9;
+      white-space: nowrap;
+    }
+
+    .version-edit-tag {
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    .version-edit-info {
+      font-size: 12px;
+      color: #595959;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .version-edit-banner-right {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    // 响应式：移动端布局调整
+    @media (max-width: 768px) {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+
+      .version-edit-banner-left {
+        flex-wrap: wrap;
+      }
+
+      .version-edit-info {
+        width: 100%;
+        white-space: normal;
+      }
+
+      .version-edit-banner-right {
+        width: 100%;
+        justify-content: flex-end;
+      }
+    }
+  }
+
+  // 对比编辑器容器（使用同一个 MDXEditor 实例的对比模式）
+  .version-edit-editor {
+    background: #fff;
+  }
+}
+
+// 版本对比编辑提示条滑入动画
+@keyframes versionBannerSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

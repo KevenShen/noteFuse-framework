@@ -2,70 +2,98 @@
  * @file MDXEditor 富文本/Markdown 编辑器主组件
  * @description 基于 @mdxeditor/editor 二次封装，支持富文本/源码/Diff/分栏四种模式
  *              统一工具栏：富文本模式操作 Lexical，源码模式操作 CodeMirror
+ *
+ * 架构：
+ * - useEditorState: 统一管理值同步、视图模式、Diff 对比状态
+ * - useEditorPlugins: 组装插件列表
+ * - useEditorImperativeHandle: 对外暴露 ref 方法
+ * - 主组件只负责 Refs、工具栏渲染、插件组装和最终渲染
  */
-import {
-  MDXEditor,
-  diffSourcePlugin,
-  toolbarPlugin,
-  type MDXEditorMethods,
-} from '@mdxeditor/editor';
+
+// ==================== 第三方库 ====================
+import { MDXEditor, type MDXEditorMethods } from '@mdxeditor/editor';
 import '@mdxeditor/editor/style.css';
-import { keymap } from '@codemirror/view';
-import { foldGutter, foldKeymap, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import {
+  createContext,
   forwardRef,
   useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
+  useContext,
   useRef,
   useState,
 } from 'react';
+
+// ==================== 样式 ====================
 import './index.less';
 
-import { UnifiedToolbar, DocumentToc } from './components';
+// ==================== 内部 Context ====================
+/**
+ * 编辑器只读状态 Context
+ * 传递编辑器只读状态给指令编辑器（Tabs/Steps/Card 等）。
+ * 当 readOnly=true 时，指令编辑器应隐藏所有操作按钮（增删、类型切换等），
+ * 内容区由 @mdxeditor/editor 的 readOnly prop 自动控制不可编辑。
+ */
+export const EditorReadOnlyContext = createContext<boolean>(false);
+
+/** 获取编辑器只读状态 */
+export const useEditorReadOnly = (): boolean =>
+  useContext(EditorReadOnlyContext);
+
+// ==================== 内部组件 ====================
+import { DocumentToc, UnifiedToolbar } from './components';
 import SplitEditor from './components/SplitEditor';
-import { defaultToolbarButtons } from './constants';
-import { createBasePlugins } from './plugins';
+
+// ==================== 内部 Hooks ====================
+import {
+  useEditorImperativeHandle,
+  useEditorPlugins,
+  useEditorState,
+  useTooltipTranslate,
+} from './hooks';
+
+// ==================== 内部类型 ====================
 import type {
   EditorCursorPos,
-  ExtendedViewMode,
+  EditorViewLike,
   MDXEditorProps,
   MDXEditorRef,
 } from './types';
-import {
-  createEditorViewCapture,
-  insertMarkdownAtCursor,
-  markdownKeymap,
-} from './utils';
-import { useEditorSync } from './hooks/useEditorSync';
-import { useTooltipTranslate } from './hooks/useTooltipTranslate';
 
 const MDXEditorComponent = forwardRef<MDXEditorRef, MDXEditorProps>(
   (props, ref) => {
+    // ==================== Props 解构 ====================
     const {
-      value,
-      autoFocus = true,
       readOnly = false,
-      height = '100vh',
+      value,
+      splitRatio = 0.5,
       placeholder,
-      showToolbar = true,
       toolbarButtons,
       customToolbarContent,
       extraPlugins = [],
+      height = '100vh',
       className = '',
       onChange,
       onBlur,
       onViewModeChange,
-      defaultViewMode = 'rich-text',
-      splitRatio = 0.5,
-      showToc = false,
+      /** 对比模式原始内容（左栏固定显示，右栏编辑当前内容） */
+      oldVersionMarkdown,
     } = props;
 
-    // ---------- Refs ----------
-    const editorRef = useRef<MDXEditorMethods | null>(null);
+    // ==================== 只读模式智能默认值 ====================
+    // 当 readOnly={true} 时，自动应用查看器模式的默认配置（等价于原 MDXViewer）
+    // 用户显式传入的 props 优先级高于默认值
+    const effectiveShowToolbar =
+      props.showToolbar !== undefined ? props.showToolbar : !readOnly;
+    const effectiveAutoFocus =
+      props.autoFocus !== undefined ? props.autoFocus : !readOnly;
+    const effectiveShowToc =
+      props.showToc !== undefined ? props.showToc : !readOnly;
+
+    // ==================== Refs ====================
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const editorViewRef = useRef<any>(null);
+    const editorRef = useRef<MDXEditorMethods | null>(null);
+    const editorViewRef = useRef<EditorViewLike | null>(null);
+    /** 分栏模式下的预览编辑器实例（使完整 API 可用） */
+    const previewEditorRef = useRef<MDXEditorMethods | null>(null);
     const cursorPosRef = useRef<EditorCursorPos>({
       mode: 'rich-text',
       lineNumber: 0,
@@ -74,159 +102,152 @@ const MDXEditorComponent = forwardRef<MDXEditorRef, MDXEditorProps>(
       isCollapsed: true,
     });
 
-    // ---------- 视图模式 ----------
-    const [currentViewMode, setCurrentViewMode] =
-      useState<ExtendedViewMode>(defaultViewMode);
-
-    // ---------- 文档目录 ----------
-    const [tocVisible, setTocVisible] = useState(showToc);
-    useEffect(() => setTocVisible(showToc), [showToc]);
-
-    const handleModeChange = useCallback(
-      (mode: ExtendedViewMode) => {
-        setCurrentViewMode(mode);
-        onViewModeChange?.(mode);
-      },
-      [onViewModeChange],
-    );
-
-    const handleCursorChange = useCallback((pos: EditorCursorPos) => {
-      cursorPosRef.current = { ...cursorPosRef.current, ...pos };
-    }, []);
-
-    // ---------- 值同步 + 粘贴处理 ----------
-    const { internalValue, handleChange } = useEditorSync({
+    // ==================== 统一状态管理（值同步 + 视图模式 + Diff） ====================
+    const {
+      currentViewMode,
+      isSplitMode,
+      displayValue,
+      handleChange,
+      originalMarkdown,
+      handleModeChange,
+    } = useEditorState({
       value,
+      readOnly,
+      defaultViewMode: props.defaultViewMode,
+      oldVersionMarkdown,
       editorRef,
+      editorViewRef,
       wrapperRef,
       onChange,
+      onViewModeChange,
     });
 
-    // ---------- Tooltip 中文翻译（只监听编辑器容器） ----------
-    useTooltipTranslate({ enabled: showToolbar, containerRef: wrapperRef });
+    // ==================== 渲染辅助 ====================
+    const tocMode: 'split' | 'source' | 'rich-text' = isSplitMode
+      ? 'split'
+      : currentViewMode === 'source'
+      ? 'source'
+      : 'rich-text';
 
-    // ---------- 失焦回调 ----------
-    const handleBlur = useCallback(() => onBlur?.(), [onBlur]);
-
-    // ---------- 对外暴露实例 ----------
-    useImperativeHandle(
-      ref,
-      () => ({
-        getEditor: () => editorRef.current,
-        getMarkdown: () => editorRef.current?.getMarkdown() || '',
-        setMarkdown: (val: string) => {
-          editorRef.current?.setMarkdown(val);
-        },
-        insertMarkdown: (val: string) => insertMarkdownAtCursor(val, editorRef),
-        focus: () => editorRef.current?.focus(),
-        getViewMode: () => currentViewMode,
-        getCursorPosition: () => cursorPosRef.current,
-      }),
-      [currentViewMode],
+    // ==================== 文档目录显示状态 ====================
+    const [tocVisible, setTocVisible] = useState(
+      readOnly && !!effectiveShowToc,
     );
 
-    // ---------- 工具栏按钮配置 ----------
-    const activeButtons = useMemo(
-      () => toolbarButtons ?? defaultToolbarButtons,
-      [toolbarButtons],
-    );
-
-    // ---------- 工具栏元素（split 模式独立渲染，非 split 模式由 toolbarPlugin 渲染） ----------
+    // ==================== 工具栏渲染 ====================
     const renderToolbar = useCallback(
       () => (
         <UnifiedToolbar
-          activeButtons={activeButtons}
           editorRef={editorRef}
           editorViewRef={editorViewRef}
-          customToolbarContent={customToolbarContent}
+          cursorPosRef={cursorPosRef}
           readOnly={readOnly}
-          handleCursorChange={handleCursorChange}
-          handleModeChange={handleModeChange}
           currentViewMode={currentViewMode}
+          toolbarButtons={toolbarButtons}
+          customToolbarContent={customToolbarContent}
           tocVisible={tocVisible}
           onToggleToc={() => setTocVisible((v) => !v)}
+          onModeChange={handleModeChange}
         />
       ),
       [
-        activeButtons,
-        customToolbarContent,
         readOnly,
-        handleCursorChange,
+        tocVisible,
+        toolbarButtons,
+        customToolbarContent,
         handleModeChange,
         currentViewMode,
-        tocVisible,
+        editorRef,
+        editorViewRef,
+        cursorPosRef,
       ],
     );
 
-    // ---------- 插件组装 ----------
-    const plugins = useMemo(() => {
-      const base = createBasePlugins({ extra: extraPlugins });
-      base.push(
-        diffSourcePlugin({
-          diffMarkdown: internalValue,
-          viewMode: 'rich-text',
-          codeMirrorExtensions: [
-            markdownKeymap,
-            createEditorViewCapture(editorViewRef),
-            foldGutter(),
-            keymap.of(foldKeymap),
-            syntaxHighlighting(defaultHighlightStyle),
-          ],
-        }),
-      );
-      if (showToolbar) {
-        base.push(toolbarPlugin({ toolbarContents: renderToolbar }));
-      }
-      return base;
-    }, [showToolbar, extraPlugins, internalValue, renderToolbar]);
+    // ==================== Tooltip 中文翻译 ====================
+    useTooltipTranslate({
+      enabled: effectiveShowToolbar,
+      containerRef: wrapperRef,
+    });
 
-    // ---------- 渲染 ----------
-    const isSplitMode = currentViewMode === 'split';
-    const tocMode = isSplitMode ? 'split' : currentViewMode === 'source' ? 'source' : 'rich-text';
+    // ==================== 插件组装 ====================
+    const { plugins } = useEditorPlugins({
+      renderToolbar,
+      currentViewMode,
+      originalMarkdown,
+      editorViewRef,
+      showToolbar: effectiveShowToolbar,
+      extraPlugins,
+    });
 
+    // ==================== 对外暴露实例 ====================
+    useEditorImperativeHandle({
+      ref,
+      editorRef,
+      editorViewRef,
+      previewEditorRef,
+      cursorPosRef,
+      currentViewMode,
+    });
+
+    // ==================== 失焦回调 ====================
+    const handleBlur = useCallback(() => onBlur?.(), [onBlur]);
+
+    // ==================== 渲染 ====================
     return (
-      <div
-        ref={wrapperRef}
-        className={`mdx-editor-wrapper ${className}`}
-        style={{ height, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', position: 'relative' }}
-        onBlur={handleBlur}
-      >
-        {/* 分栏模式下直接渲染工具栏（非分栏模式由 toolbarPlugin 在 MDXEditor 内部渲染） */}
-        {isSplitMode && showToolbar && renderToolbar()}
+      <EditorReadOnlyContext.Provider value={readOnly}>
+        <div
+          ref={wrapperRef}
+          className={`mdx-editor-wrapper ${
+            readOnly ? 'mdx-editor-readonly' : ''
+          } ${isSplitMode ? 'mdx-editor-split-mode' : ''} ${className}`}
+          style={{
+            height,
+            display: 'flex',
+            flexDirection: 'row',
+            boxSizing: 'border-box',
+          }}
+          onBlur={handleBlur}
+        >
+          {/* 左侧：编辑区（独立滚动） */}
+          <div className="mdx-editor-main-area">
+            {/* 分栏模式下直接渲染工具栏（非分栏模式由 toolbarPlugin 在 MDXEditor 内部渲染） */}
+            {isSplitMode && effectiveShowToolbar && renderToolbar()}
 
-        {/* 编辑器主体 — 恢复添加目录前的布局，确保滚动条正常 */}
-        {isSplitMode ? (
-          <SplitEditor
-            value={internalValue}
-            onChange={handleChange}
-            editorViewRef={editorViewRef}
-            readOnly={readOnly}
-            splitRatio={splitRatio}
-          />
-        ) : (
-          <MDXEditor
-            plugins={plugins}
-            ref={editorRef}
-            autoFocus={autoFocus}
-            markdown={internalValue}
-            onChange={handleChange}
-            readOnly={readOnly}
-            placeholder={placeholder}
-            contentEditableClassName="mdx-editor-content"
-          />
-        )}
+            {isSplitMode ? (
+              <SplitEditor
+                readOnly={readOnly}
+                value={displayValue}
+                onChange={handleChange}
+                editorViewRef={editorViewRef}
+                previewEditorRef={previewEditorRef}
+                splitRatio={splitRatio}
+              />
+            ) : (
+              <MDXEditor
+                readOnly={readOnly}
+                plugins={plugins}
+                ref={editorRef}
+                autoFocus={effectiveAutoFocus}
+                markdown={displayValue}
+                onChange={handleChange}
+                placeholder={placeholder}
+                contentEditableClassName="mdx-editor-content"
+              />
+            )}
+          </div>
 
-        {/* 文档目录：绝对定位浮动在右侧，不参与主布局 */}
-        {showToc && tocVisible && (
-          <DocumentToc
-            containerRef={wrapperRef}
-            editorViewRef={editorViewRef}
-            mode={tocMode}
-            visible={tocVisible}
-            onClose={() => setTocVisible(false)}
-          />
-        )}
-      </div>
+          {/* 右侧：文档目录（固定宽度，独立滚动）；diff 模式下自动隐藏 */}
+          {effectiveShowToc && tocVisible && currentViewMode !== 'diff' && (
+            <DocumentToc
+              visible={tocVisible}
+              containerRef={wrapperRef}
+              editorViewRef={editorViewRef}
+              mode={tocMode}
+              onClose={() => setTocVisible(false)}
+            />
+          )}
+        </div>
+      </EditorReadOnlyContext.Provider>
     );
   },
 );
@@ -235,7 +256,7 @@ MDXEditorComponent.displayName = 'MDXEditor';
 
 export default MDXEditorComponent;
 
-// 命名导出（供外部模块复用）
+// ==================== 命名导出（供外部模块复用） ====================
 export { directiveDescriptors } from './directives';
 export {
   codeBlockEditorDescriptor,

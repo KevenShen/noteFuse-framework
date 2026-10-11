@@ -1,0 +1,84 @@
+// src/pages/Recent/index.less
+// 最近使用页面样式
+
+// ==================== 页面容器 ====================
+.recent-page {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+// ==================== 顶部筛选栏 ====================
+.recent-filter {
+    background: #fff;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+
+    .recent-filter-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .recent-filter-tabs {
+        margin-bottom: 0;
+    }
+
+    .recent-filter-dropdown-icon {
+        font-size: 10px;
+    }
+
+    .recent-filter-tag {
+        margin: 0;
+    }
+}
+
+// ==================== 文档列表 ====================
+.recent-doc-card {
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+
+    .recent-doc-card-body {
+        padding: 0;
+    }
+
+    .recent-doc-item {
+        padding: 14px 20px;
+    }
+
+    .recent-doc-avatar {
+        background-color: #1890ff;
+    }
+
+    .recent-doc-title {
+        font-size: 15px;
+        font-weight: 500;
+        color: #262626;
+    }
+
+    .recent-doc-tag {
+        margin: 0;
+    }
+
+    .recent-doc-meta {
+        font-size: 13px;
+        color: #8c8c8c;
+    }
+
+    .recent-doc-summary {
+        color: #bfbfbf;
+    }
+
+    .recent-doc-empty {
+        padding: 40px 0;
+    }
+
+    .recent-doc-pagination {
+        padding: 12px 20px;
+        border-top: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: flex-end;
+    }
+}
