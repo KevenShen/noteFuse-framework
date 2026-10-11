@@ -21,8 +21,8 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
 
   // 自行从 model 获取所需数据
   const { outline, loading } = useShallowSelector((state: any) => ({
-    outline: state.doc.aiOutline,
-    loading: state.doc.loading,
+    outline: state.docDetail.aiOutline,
+    loading: state.docDetail.loading,
   }));
 
   const [state, setState] = useSetState({
@@ -51,7 +51,7 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
       return;
     }
     dispatch({
-      type: 'doc/handleSaveAiOutline',
+      type: 'docDetail/handleSaveAiOutline',
       payload: {
         id: projectId,
         summary: editingOutline.summary,
@@ -63,7 +63,7 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
 
   // 生成大纲
   const handleGenerate = () => {
-    dispatch({ type: 'doc/handleGenerateAiOutline', payload: projectId });
+    dispatch({ type: 'docDetail/handleGenerateAiOutline', payload: projectId });
   };
 
   // 更新章节字段

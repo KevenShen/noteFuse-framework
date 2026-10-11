@@ -121,26 +121,26 @@ const DocPage: React.FC = () => {
     activeTab,
     collected,
   } = useShallowSelector((state: any) => ({
-    loading: state.doc.loading,
-    currentDoc: state.doc.currentDoc,
-    docList: state.doc.docList,
-    docCategoryList: state.doc.docCategoryList,
-    docVersions: state.doc.docVersions,
-    docAnnotations: state.doc.docAnnotations,
-    readMode: state.doc.readMode,
-    annotationEditMode: state.doc.annotationEditMode,
-    editingAnnotation: state.doc.editingAnnotation,
-    annotationContent: state.doc.annotationContent,
-    originalContentBeforeEdit: state.doc.originalContentBeforeEdit,
-    newAnnotationMarkerId: state.doc.newAnnotationMarkerId,
-    outlineMode: state.doc.outlineMode,
-    outlineContent: state.doc.outlineContent,
-    versionOverviewMode: state.doc.versionOverviewMode,
-    focusMode: state.doc.focusMode,
-    focusAnchor: state.doc.focusAnchor,
-    activeAnchor: state.doc.activeAnchor,
-    activeTab: state.doc.activeTab,
-    collected: state.doc.collected,
+    loading: state.docDetail.loading,
+    currentDoc: state.docDetail.currentDoc,
+    docList: state.docList.docList,
+    docCategoryList: state.docCategory.docCategoryList,
+    docVersions: state.docVersions.docVersions,
+    docAnnotations: state.docAnnotations.docAnnotations,
+    readMode: state.docDetail.readMode,
+    annotationEditMode: state.docAnnotations.annotationEditMode,
+    editingAnnotation: state.docAnnotations.editingAnnotation,
+    annotationContent: state.docAnnotations.annotationContent,
+    originalContentBeforeEdit: state.docAnnotations.originalContentBeforeEdit,
+    newAnnotationMarkerId: state.docAnnotations.newAnnotationMarkerId,
+    outlineMode: state.docDetail.outlineMode,
+    outlineContent: state.docDetail.outlineContent,
+    versionOverviewMode: state.docDetail.versionOverviewMode,
+    focusMode: state.docDetail.focusMode,
+    focusAnchor: state.docDetail.focusAnchor,
+    activeAnchor: state.docDetail.activeAnchor,
+    activeTab: state.docDetail.activeTab,
+    collected: state.docDetail.collected,
   }));
 
   const { currentProject: modelCurrentProject } = useShallowSelector(
@@ -192,7 +192,7 @@ const DocPage: React.FC = () => {
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveDocDetailInitialData',
+    actionType: 'docDetail/saveDocDetailInitialData',
     mapData: (data) => ({
       categories: data.docCategoryList,
       docs: data.docList,
@@ -231,16 +231,16 @@ const DocPage: React.FC = () => {
       const stored = localStorage.getItem(OUTLINE_STORAGE_KEY);
       if (stored) {
         // 用户本地编辑过的大纲优先
-        dispatch({ type: 'doc/setOutlineContent', payload: stored });
+        dispatch({ type: 'docDetail/setOutlineContent', payload: stored });
       } else if (modelCurrentDoc?.current_version?.outline) {
         // 从 API 获取的版本大纲
         dispatch({
-          type: 'doc/setOutlineContent',
+          type: 'docDetail/setOutlineContent',
           payload: modelCurrentDoc.current_version.outline,
         });
       } else {
         // 没有大纲数据，使用空字符串
-        dispatch({ type: 'doc/setOutlineContent', payload: '' });
+        dispatch({ type: 'docDetail/setOutlineContent', payload: '' });
       }
     } catch (e) {
       console.error('加载文档大纲失败:', e);
@@ -273,7 +273,7 @@ const DocPage: React.FC = () => {
   useEffect(() => {
     if (currentVersion?.id) {
       dispatch({
-        type: 'doc/fetchDocAnnotations',
+        type: 'docAnnotations/fetchDocAnnotations',
         payload: { versionId: currentVersion.id },
       });
     }
@@ -305,7 +305,7 @@ const DocPage: React.FC = () => {
 
     // 4. 保存带标记的原文
     await dispatch({
-      type: 'doc/saveVersionContent',
+      type: 'docAnnotations/saveVersionContent',
       payload: { versionId: currentVersion.id, content: contentWithMarker },
     });
 
@@ -324,19 +324,19 @@ const DocPage: React.FC = () => {
 
     // 6. 保存状态到 model
     dispatch({
-      type: 'doc/setOriginalContentBeforeEdit',
+      type: 'docAnnotations/setOriginalContentBeforeEdit',
       payload: contentWithMarker,
     });
-    dispatch({ type: 'doc/setNewAnnotationMarkerId', payload: markerId });
-    dispatch({ type: 'doc/setEditingAnnotation', payload: newAnnotation });
-    dispatch({ type: 'doc/setAnnotationContent', payload: '' });
-    dispatch({ type: 'doc/setAnnotationEditMode', payload: true });
+    dispatch({ type: 'docAnnotations/setNewAnnotationMarkerId', payload: markerId });
+    dispatch({ type: 'docAnnotations/setEditingAnnotation', payload: newAnnotation });
+    dispatch({ type: 'docAnnotations/setAnnotationContent', payload: '' });
+    dispatch({ type: 'docAnnotations/setAnnotationEditMode', payload: true });
 
     // 7. 关闭弹窗
     setAddAnnotationModalOpen(false);
 
     // 8. 自动切换到批注模式
-    dispatch({ type: 'doc/setReadMode', payload: 'annotation' });
+    dispatch({ type: 'docDetail/setReadMode', payload: 'annotation' });
   };
 
   // 保存批注
@@ -346,7 +346,7 @@ const DocPage: React.FC = () => {
     if (newAnnotationMarkerId !== null) {
       // 新批注：调用添加批注 API
       await dispatch({
-        type: 'doc/addDocAnnotation',
+        type: 'docAnnotations/addDocAnnotation',
         payload: {
           versionId: currentVersion.id,
           marker_id: newAnnotationMarkerId,
@@ -357,7 +357,7 @@ const DocPage: React.FC = () => {
     } else {
       // 已有批注：调用更新批注 API
       await dispatch({
-        type: 'doc/updateDocAnnotation',
+        type: 'docAnnotations/updateDocAnnotation',
         payload: {
           id: editingAnnotation.id,
           content: annotationContent,
@@ -366,7 +366,7 @@ const DocPage: React.FC = () => {
     }
 
     // 重置批注编辑状态
-    dispatch({ type: 'doc/resetAnnotationEditState' });
+    dispatch({ type: 'docAnnotations/resetAnnotationEditState' });
   };
 
   // 取消批注编辑
@@ -383,21 +383,21 @@ const DocPage: React.FC = () => {
         newAnnotationMarkerId,
       );
       dispatch({
-        type: 'doc/saveVersionContent',
+        type: 'docAnnotations/saveVersionContent',
         payload: { versionId: currentVersion.id, content: restoredContent },
       });
     }
 
     // 重置批注编辑状态
-    dispatch({ type: 'doc/resetAnnotationEditState' });
+    dispatch({ type: 'docAnnotations/resetAnnotationEditState' });
   };
 
   // 编辑已有批注
   const handleEditAnnotation = (annotation: AnnotationItem) => {
-    dispatch({ type: 'doc/setEditingAnnotation', payload: annotation });
-    dispatch({ type: 'doc/setAnnotationContent', payload: annotation.content });
-    dispatch({ type: 'doc/setAnnotationEditMode', payload: true });
-    dispatch({ type: 'doc/setNewAnnotationMarkerId', payload: null });
+    dispatch({ type: 'docAnnotations/setEditingAnnotation', payload: annotation });
+    dispatch({ type: 'docAnnotations/setAnnotationContent', payload: annotation.content });
+    dispatch({ type: 'docAnnotations/setAnnotationEditMode', payload: true });
+    dispatch({ type: 'docAnnotations/setNewAnnotationMarkerId', payload: null });
   };
 
   // 删除批注
@@ -419,7 +419,7 @@ const DocPage: React.FC = () => {
 
         // 2. 调用删除批注 API（同时传递删除标记后的原文）
         await dispatch({
-          type: 'doc/deleteDocAnnotation',
+          type: 'docAnnotations/deleteDocAnnotation',
           payload: {
             id: annotation.id,
             content_without_marker: contentWithoutMarker,
@@ -428,7 +428,7 @@ const DocPage: React.FC = () => {
 
         // 3. 刷新批注列表
         dispatch({
-          type: 'doc/fetchDocAnnotations',
+          type: 'docAnnotations/fetchDocAnnotations',
           payload: { versionId: currentVersion.id },
         });
 
@@ -441,7 +441,7 @@ const DocPage: React.FC = () => {
   const handleJumpToAnnotation = (annotation: AnnotationItem) => {
     // 1. 确保处于批注模式
     if (readMode !== 'annotation') {
-      dispatch({ type: 'doc/setReadMode', payload: 'annotation' });
+      dispatch({ type: 'docDetail/setReadMode', payload: 'annotation' });
     }
 
     // 2. 等待渲染完成后，找到批注块元素
@@ -514,7 +514,7 @@ const DocPage: React.FC = () => {
             }
           }
           if (current && current !== activeAnchorRef.current) {
-            dispatch({ type: 'doc/setActiveAnchor', payload: current });
+            dispatch({ type: 'docDetail/setActiveAnchor', payload: current });
           }
           ticking = false;
         });
@@ -557,17 +557,17 @@ const DocPage: React.FC = () => {
   // 选择文档（路由跳转）
   const handleSelectDoc = (id: number) => {
     // 切换文档时重置阅读模式状态
-    dispatch({ type: 'doc/setFocusMode', payload: false });
-    dispatch({ type: 'doc/setFocusAnchor', payload: '' });
-    dispatch({ type: 'doc/setActiveAnchor', payload: '' });
+    dispatch({ type: 'docDetail/setFocusMode', payload: false });
+    dispatch({ type: 'docDetail/setFocusAnchor', payload: '' });
+    dispatch({ type: 'docDetail/setActiveAnchor', payload: '' });
     history.push(`/doc/${id}?project_id=${projectId}`);
   };
 
   // 锚点点击
   const handleAnchorClick = (anchor: AnchorItem) => {
-    dispatch({ type: 'doc/setActiveAnchor', payload: anchor.key });
+    dispatch({ type: 'docDetail/setActiveAnchor', payload: anchor.key });
     if (focusMode) {
-      dispatch({ type: 'doc/setFocusAnchor', payload: anchor.title });
+      dispatch({ type: 'docDetail/setFocusAnchor', payload: anchor.title });
     } else {
       isProgramScrollingRef.current = true;
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);

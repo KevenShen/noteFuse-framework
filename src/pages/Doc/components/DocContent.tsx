@@ -75,18 +75,18 @@ const DocContent: React.FC<DocContentProps> = ({
     annotationContent,
     annotationSaving,
   } = useShallowSelector((state: any) => ({
-    outlineMode: state.doc.outlineMode,
-    outlineContent: state.doc.outlineContent,
-    versionOverviewMode: state.doc.versionOverviewMode,
-    focusMode: state.doc.focusMode,
-    focusAnchor: state.doc.focusAnchor,
-    collected: state.doc.collected,
-    readMode: state.doc.readMode,
-    annotations: state.doc.docAnnotations,
-    annotationEditMode: state.doc.annotationEditMode,
-    editingAnnotation: state.doc.editingAnnotation,
-    annotationContent: state.doc.annotationContent,
-    annotationSaving: state.doc.annotationSaving,
+    outlineMode: state.docDetail.outlineMode,
+    outlineContent: state.docDetail.outlineContent,
+    versionOverviewMode: state.docDetail.versionOverviewMode,
+    focusMode: state.docDetail.focusMode,
+    focusAnchor: state.docDetail.focusAnchor,
+    collected: state.docDetail.collected,
+    readMode: state.docDetail.readMode,
+    annotations: state.docAnnotations.docAnnotations,
+    annotationEditMode: state.docAnnotations.annotationEditMode,
+    editingAnnotation: state.docAnnotations.editingAnnotation,
+    annotationContent: state.docAnnotations.annotationContent,
+    annotationSaving: state.docAnnotations.annotationSaving,
   }));
 
   // 内容容器 ref（用于事件委托）
@@ -101,28 +101,28 @@ const DocContent: React.FC<DocContentProps> = ({
 
   // 切换收藏
   const handleToggleCollect = () => {
-    dispatch({ type: 'doc/toggleCollected' });
+    dispatch({ type: 'docDetail/toggleCollected' });
   };
 
   // 退出大纲模式
   const handleExitOutline = () => {
-    dispatch({ type: 'doc/setOutlineMode', payload: false });
+    dispatch({ type: 'docDetail/setOutlineMode', payload: false });
   };
 
   // 退出版本总览模式
   const handleExitVersionOverview = () => {
-    dispatch({ type: 'doc/setVersionOverviewMode', payload: false });
+    dispatch({ type: 'docDetail/setVersionOverviewMode', payload: false });
   };
 
   // 退出聚焦模式
   const handleExitFocus = () => {
-    dispatch({ type: 'doc/setFocusMode', payload: false });
-    dispatch({ type: 'doc/setFocusAnchor', payload: '' });
+    dispatch({ type: 'docDetail/setFocusMode', payload: false });
+    dispatch({ type: 'docDetail/setFocusAnchor', payload: '' });
   };
 
   // 批注内容变化
   const handleAnnotationContentChange = (content: string) => {
-    dispatch({ type: 'doc/setAnnotationContent', payload: content });
+    dispatch({ type: 'docAnnotations/setAnnotationContent', payload: content });
   };
 
   // 事件委托：处理批注块的编辑/删除按钮点击

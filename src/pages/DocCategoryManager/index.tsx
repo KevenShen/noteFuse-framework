@@ -118,8 +118,8 @@ const DocCategoryManager = () => {
   // 使用 useShallowSelector 浅比较，避免无关字段（如 loading）变化时触发重渲染
   const { docCategoryList: modelCategoryList, loading } =
     useShallowSelector((state: any) => ({
-      docCategoryList: state.doc.docCategoryList,
-      loading: state.doc.loading,
+      docCategoryList: state.docCategory.docCategoryList,
+      loading: state.docDetail.loading,
     }));
 
   // useClientLoaderData 返回 { data: clientLoader返回值 }
@@ -138,7 +138,7 @@ const DocCategoryManager = () => {
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveDocDetailInitialData',
+    actionType: 'docDetail/saveDocDetailInitialData',
     mapData: (data) => ({
       categories: data.docCategoryList,
       docs: [],
@@ -150,13 +150,13 @@ const DocCategoryManager = () => {
   // ==================== 事件处理 ====================
 
   const onRefresh = useCallback(() => {
-    dispatch({ type: 'doc/fetchDocCategoryList' });
+    dispatch({ type: 'docCategory/fetchDocCategoryList' });
   }, [dispatch]);
 
   const onAdd = useCallback(
     (values: Record<string, any>, parentId?: number | string | null) => {
       dispatch({
-        type: 'doc/handleCreateDocCategory',
+        type: 'docCategory/handleCreateDocCategory',
         payload: { ...values, parent_id: parentId ?? 0 },
       });
     },
@@ -166,7 +166,7 @@ const DocCategoryManager = () => {
   const onEdit = useCallback(
     (values: Record<string, any>, record: CategoryItem) => {
       dispatch({
-        type: 'doc/handleUpdateDocCategory',
+        type: 'docCategory/handleUpdateDocCategory',
         payload: { id: record.id, data: values },
       });
     },
@@ -175,14 +175,14 @@ const DocCategoryManager = () => {
 
   const onDelete = useCallback(
     (record: CategoryItem) => {
-      dispatch({ type: 'doc/handleDeleteDocCategory', payload: record.id });
+      dispatch({ type: 'docCategory/handleDeleteDocCategory', payload: record.id });
     },
     [dispatch],
   );
 
   const onBatchDelete = useCallback(
     (keys: (number | string)[]) => {
-      dispatch({ type: 'doc/handleBatchDeleteDocCategories', payload: keys });
+      dispatch({ type: 'docCategory/handleBatchDeleteDocCategories', payload: keys });
     },
     [dispatch],
   );
@@ -190,7 +190,7 @@ const DocCategoryManager = () => {
   const onBatchMove = useCallback(
     (keys: (number | string)[], targetParentId: number | string) => {
       dispatch({
-        type: 'doc/handleBatchMoveDocCategories',
+        type: 'docCategory/handleBatchMoveDocCategories',
         payload: { ids: keys, target_parent_id: targetParentId },
       });
     },
@@ -199,7 +199,7 @@ const DocCategoryManager = () => {
 
   const onSaveSort = useCallback(
     (sortedList: CategoryItem[]) => {
-      dispatch({ type: 'doc/handleSaveDocCategorySort', payload: sortedList });
+      dispatch({ type: 'docCategory/handleSaveDocCategorySort', payload: sortedList });
     },
     [dispatch],
   );

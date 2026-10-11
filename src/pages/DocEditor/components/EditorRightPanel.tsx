@@ -64,7 +64,7 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
   // 自行从 model 获取状态
   const { activeTab, docVersions } = useShallowSelector((state: any) => ({
     activeTab: state.docEditor.activeRightTab,
-    docVersions: state.doc.docVersions,
+    docVersions: state.docVersions.docVersions,
   }));
 
   const tabs: { key: RightPanelTab; icon: React.ReactNode; title: string }[] = [

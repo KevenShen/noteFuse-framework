@@ -66,32 +66,32 @@ const DocRightPanel: React.FC<DocRightPanelProps> = ({
     collected,
     annotations,
   } = useShallowSelector((state: any) => ({
-    activeTab: state.doc.activeTab,
-    activeAnchor: state.doc.activeAnchor,
-    focusMode: state.doc.focusMode,
-    collected: state.doc.collected,
-    annotations: state.doc.docAnnotations,
+    activeTab: state.docDetail.activeTab,
+    activeAnchor: state.docDetail.activeAnchor,
+    focusMode: state.docDetail.focusMode,
+    collected: state.docDetail.collected,
+    annotations: state.docAnnotations.docAnnotations,
   }));
 
   // 切换 Tab
   const handleTabChange = (tab: typeof activeTab) => {
-    dispatch({ type: 'doc/setActiveTab', payload: tab });
+    dispatch({ type: 'docDetail/setActiveTab', payload: tab });
   };
 
   // 聚焦模式切换
   const handleToggleFocus = (checked: boolean) => {
-    dispatch({ type: 'doc/setFocusMode', payload: checked });
+    dispatch({ type: 'docDetail/setFocusMode', payload: checked });
     if (!checked) {
-      dispatch({ type: 'doc/setFocusAnchor', payload: '' });
+      dispatch({ type: 'docDetail/setFocusAnchor', payload: '' });
     } else if (activeAnchor) {
       const anchorItem = anchors.find((a) => a.key === activeAnchor);
-      if (anchorItem) dispatch({ type: 'doc/setFocusAnchor', payload: anchorItem.title });
+      if (anchorItem) dispatch({ type: 'docDetail/setFocusAnchor', payload: anchorItem.title });
     }
   };
 
   // 切换收藏
   const handleToggleCollect = () => {
-    dispatch({ type: 'doc/toggleCollected' });
+    dispatch({ type: 'docDetail/toggleCollected' });
   };
 
   const tabs: { key: typeof activeTab; icon: React.ReactNode; title: string }[] = [

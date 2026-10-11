@@ -35,33 +35,33 @@ const DocToolbar: React.FC<DocToolbarProps> = ({
     versionOverviewMode,
     readMode,
   } = useShallowSelector((state: any) => ({
-    outlineMode: state.doc.outlineMode,
-    outlineContent: state.doc.outlineContent,
-    versionOverviewMode: state.doc.versionOverviewMode,
-    readMode: state.doc.readMode,
+    outlineMode: state.docDetail.outlineMode,
+    outlineContent: state.docDetail.outlineContent,
+    versionOverviewMode: state.docDetail.versionOverviewMode,
+    readMode: state.docDetail.readMode,
   }));
 
   // 切换大纲阅读模式
   const handleToggleOutline = () => {
     const next = !outlineMode;
-    dispatch({ type: 'doc/setOutlineMode', payload: next });
+    dispatch({ type: 'docDetail/setOutlineMode', payload: next });
     if (next) {
-      dispatch({ type: 'doc/setVersionOverviewMode', payload: false });
+      dispatch({ type: 'docDetail/setVersionOverviewMode', payload: false });
     }
   };
 
   // 切换版本总览阅读模式
   const handleToggleVersionOverview = () => {
     const next = !versionOverviewMode;
-    dispatch({ type: 'doc/setVersionOverviewMode', payload: next });
+    dispatch({ type: 'docDetail/setVersionOverviewMode', payload: next });
     if (next) {
-      dispatch({ type: 'doc/setOutlineMode', payload: false });
+      dispatch({ type: 'docDetail/setOutlineMode', payload: false });
     }
   };
 
   // 切换阅读模式
   const handleReadModeChange = (mode: 'original' | 'annotation') => {
-    dispatch({ type: 'doc/setReadMode', payload: mode });
+    dispatch({ type: 'docDetail/setReadMode', payload: mode });
   };
 
   return (

@@ -109,25 +109,25 @@ const ProjectDetail: React.FC = () => {
 
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveDocList',
+    actionType: 'docList/saveDocList',
     mapData: (data) => data.docList || [],
   });
 
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveDocCategoryList',
+    actionType: 'docCategory/saveDocCategoryList',
     mapData: (data) => data.docCategoryList || [],
   });
 
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveDocVersions',
+    actionType: 'docVersions/saveDocVersions',
     mapData: (data) => data.docVersions || [],
   });
 
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveAiOutline',
+    actionType: 'docDetail/saveAiOutline',
     mapData: (data) => data.aiOutline || null,
   });
 

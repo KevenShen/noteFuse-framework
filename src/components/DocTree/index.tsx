@@ -116,6 +116,21 @@ const buildTree = (
     });
 };
 
+/** 递归收集树中所有有子节点的 key（用于搜索时自动展开全部） */
+const collectAllExpandableKeys = (tree: TreeNode[]): string[] => {
+  const keys: string[] = [];
+  const traverse = (nodes: TreeNode[]) => {
+    nodes.forEach((node) => {
+      if (node.children && node.children.length > 0) {
+        keys.push(node.key);
+        traverse(node.children);
+      }
+    });
+  };
+  traverse(tree);
+  return keys;
+};
+
 /** 过滤目录树 */
 const filterTree = (tree: TreeNode[], keyword: string): TreeNode[] => {
   if (!keyword) return tree;
@@ -123,11 +138,10 @@ const filterTree = (tree: TreeNode[], keyword: string): TreeNode[] => {
   return tree.reduce((acc: TreeNode[], node) => {
     if (node.children) {
       const filteredChildren = filterTree(node.children, keyword);
-      if (
-        filteredChildren.length > 0 ||
-        node.title.toLowerCase().includes(lowerKeyword)
-      ) {
-        acc.push({ ...node, children: filteredChildren });
+      const nodeMatched = node.title.toLowerCase().includes(lowerKeyword);
+      if (filteredChildren.length > 0 || nodeMatched) {
+        // 节点本身匹配时保留原始 children（如版本节点），否则用过滤后的
+        acc.push({ ...node, children: nodeMatched ? node.children : filteredChildren });
       }
     } else if (node.title.toLowerCase().includes(lowerKeyword)) {
       acc.push(node);
@@ -236,9 +250,9 @@ const DocTree: React.FC<DocTreeProps> = ({
     }
   }, [treeData, defaultExpandAll, defaultExpandVersion]);
 
-  // 搜索时自动展开所有匹配的分类
+  // 搜索时自动展开所有匹配节点的祖先（递归收集，确保匹配结果可见）
   const effectiveExpandedKeys = searchKeyword
-    ? filteredTree.map((n) => n.key)
+    ? collectAllExpandableKeys(filteredTree)
     : expandedKeys;
 
   // 选择文档或版本

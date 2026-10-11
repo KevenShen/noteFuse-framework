@@ -1,8 +1,6 @@
 // src/services/index.ts
 // Service 层统一导出入口
 // 按功能域分类，便于统一导入
-// 注意：doc.ts 中与 projectDetail.ts 重复的文档/版本/批注函数未在此导出，
-//       请优先使用 projectDetail 域；doc.ts 仅保留文档分类管理等独有函数
 
 // ==================== 文集域 ====================
 
@@ -58,15 +56,53 @@ export {
   saveAiOutline,
 } from './projectDetail';
 
-// ==================== 文档分类管理（doc.ts 独有） ====================
+// ==================== 文档域（按功能拆分） ====================
 
+/** 文档列表与 CRUD */
 export {
+  getProjectDocs as getDocListByProject,
+  createDoc as createDocItem,
+  updateDoc as updateDocItem,
+  deleteDoc as deleteDocItem,
+} from './docList';
+
+/** 文档详情与 AI 大纲 */
+export {
+  getDocDetail as getDocItemDetail,
+  saveDocContent as saveDocItemContent,
+  getAiOutline as getDocAiOutline,
+  generateAiOutline as generateDocAiOutline,
+  saveAiOutline as saveDocAiOutline,
+} from './docDetail';
+
+/** 文档分类管理 */
+export {
+  getProjectDocCategories as getDocCategoriesByProject,
   getDocCategoryList,
   createDocCategory,
   updateDocCategory,
   deleteDocCategory,
+  batchDeleteDocCategories,
+  batchMoveDocCategories,
   saveDocCategorySort,
-} from './doc';
+} from './docCategory';
+
+/** 文档版本管理 */
+export {
+  getDocVersions as getDocVersionList,
+  createDocVersion as createDocVersionItem,
+  updateDocVersion as updateDocVersionItem,
+  setCurrentVersion as setDocCurrentVersion,
+  saveVersionContent as saveDocVersionContent,
+} from './docVersions';
+
+/** 文档批注管理 */
+export {
+  getDocAnnotations as getDocAnnotationList,
+  addDocAnnotation as addDocAnnotationItem,
+  updateDocAnnotation as updateDocAnnotationItem,
+  deleteDocAnnotation as deleteDocAnnotationItem,
+} from './docAnnotations';
 
 // ==================== 用户域 ====================
 

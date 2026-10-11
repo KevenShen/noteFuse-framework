@@ -22,7 +22,7 @@ interface LatestDocsTabProps {
 const LatestDocsTab: React.FC<LatestDocsTabProps> = ({ onSelectDoc }) => {
   // 自行从 model 获取所需数据
   const { docs } = useShallowSelector((state: any) => ({
-    docs: state.doc.docList,
+    docs: state.docList.docList,
   }));
 
   // 按修改时间倒序，取前 10 条

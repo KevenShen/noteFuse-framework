@@ -8,8 +8,12 @@ export type { ProjectState } from './project';
 export type { ProjectCategoryState } from './projectCategory';
 export type { ProjectDetailState } from './projectDetail';
 
-// ==================== 文档域 ====================
-export type { DocState } from './doc';
+// ==================== 文档域（按功能拆分） ====================
+export type { DocListState } from './docList';
+export type { DocDetailState } from './docDetail';
+export type { DocCategoryState } from './docCategory';
+export type { DocVersionsState } from './docVersions';
+export type { DocAnnotationsState } from './docAnnotations';
 export type { DocEditorState, EditorMode, RightPanelTab } from './docEditor';
 
 // ==================== 用户域 ====================

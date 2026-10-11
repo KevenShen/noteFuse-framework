@@ -18,9 +18,9 @@ const DocSidebar: React.FC<DocSidebarProps> = ({ projectId, onSelectDoc }) => {
   // 自行从 model 获取所需数据
   const { docCategories, docs, docVersions } = useShallowSelector(
     (state: any) => ({
-      docCategories: state.doc.docCategoryList,
-      docs: state.doc.docList,
-      docVersions: state.doc.docVersions,
+      docCategories: state.docCategory.docCategoryList,
+      docs: state.docList.docList,
+      docVersions: state.docVersions.docVersions,
     }),
   );
 

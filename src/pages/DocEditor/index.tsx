@@ -110,11 +110,11 @@ const DocEditorPage: React.FC = () => {
     docCategoryList: modelDocCategoryList,
     docVersions: modelDocVersions,
   } = useShallowSelector((state: any) => ({
-    currentDoc: state.doc.currentDoc,
-    loading: state.doc.loading,
-    docList: state.doc.docList,
-    docCategoryList: state.doc.docCategoryList,
-    docVersions: state.doc.docVersions,
+    currentDoc: state.docDetail.currentDoc,
+    loading: state.docDetail.loading,
+    docList: state.docList.docList,
+    docCategoryList: state.docCategory.docCategoryList,
+    docVersions: state.docVersions.docVersions,
   }));
   // project 相关数据从 project model 获取
   const { currentProject: modelCurrentProject } = useShallowSelector(
@@ -172,7 +172,7 @@ const DocEditorPage: React.FC = () => {
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'doc/saveDocDetailInitialData',
+    actionType: 'docDetail/saveDocDetailInitialData',
     mapData: (data) => ({
       categories: data.docCategoryList,
       docs: data.docList,
@@ -232,7 +232,7 @@ const DocEditorPage: React.FC = () => {
       switch (action) {
         case 'add-doc': {
           const newDoc = await dispatch({
-            type: 'doc/handleCreateDoc',
+            type: 'docList/handleCreateDoc',
             payload: { ...data, project_id: Number(projectId) },
           });
           // 新建成功后跳转到新文档编辑页
@@ -243,14 +243,14 @@ const DocEditorPage: React.FC = () => {
         }
         case 'edit-doc':
           await dispatch({
-            type: 'doc/handleUpdateDoc',
+            type: 'docList/handleUpdateDoc',
             payload: { id: data.id, data },
           });
           break;
         case 'delete-doc': {
           const deletedId = data.id;
           await dispatch({
-            type: 'doc/handleDeleteDoc',
+            type: 'docList/handleDeleteDoc',
             payload: deletedId,
           });
           // 如果删除的是当前文档，跳转到文集详情页
@@ -261,7 +261,7 @@ const DocEditorPage: React.FC = () => {
         }
         case 'move-doc':
           await dispatch({
-            type: 'doc/handleUpdateDoc',
+            type: 'docList/handleUpdateDoc',
             payload: { id: data.id, data: { doc_category_id: data.category_id } },
           });
           break;
@@ -308,7 +308,7 @@ const DocEditorPage: React.FC = () => {
             // 创建新版本（内容为空），然后切换到该版本进行编辑
             try {
               const result = await dispatch({
-                type: 'doc/handleCreateDocVersion',
+                type: 'docVersions/handleCreateDocVersion',
                 payload: {
                   doc_id: docId,
                   version: data?.version || `v${docVersions.length + 1}.0`,
@@ -334,21 +334,21 @@ const DocEditorPage: React.FC = () => {
         case 'edit-version': {
           // 编辑版本信息（不涉及内容编辑）
           await dispatch({
-            type: 'doc/handleUpdateDocVersion',
+            type: 'docVersions/handleUpdateDocVersion',
             payload: { id: data.id, data },
           });
           break;
         }
         case 'delete-version': {
           await dispatch({
-            type: 'doc/handleDeleteDocVersion',
+            type: 'docVersions/handleDeleteDocVersion',
             payload: data.id,
           });
           break;
         }
         case 'set-current-version': {
           await dispatch({
-            type: 'doc/handleSetCurrentDocVersion',
+            type: 'docVersions/handleSetCurrentDocVersion',
             payload: data.id,
           });
           break;
@@ -356,7 +356,7 @@ const DocEditorPage: React.FC = () => {
         case 'rollback-version': {
           // 回滚版本：将该版本内容复制到当前版本
           await dispatch({
-            type: 'doc/handleRollbackDocVersion',
+            type: 'docVersions/handleRollbackDocVersion',
             payload: data.id,
           });
           break;
@@ -419,7 +419,7 @@ const DocEditorPage: React.FC = () => {
       dispatch({ type: 'docEditor/setSaving', payload: true });
       // 调用 API 创建新版本
       const result = await dispatch({
-        type: 'doc/handleCreateDocVersion',
+        type: 'docVersions/handleCreateDocVersion',
         payload: {
           doc_id: docId,
           version: newVersionInfo.version,
@@ -471,13 +471,13 @@ const DocEditorPage: React.FC = () => {
 
     if (pid) {
       dispatch({ type: 'projectDetail/fetchProjectDetail', payload: pid });
-      dispatch({ type: 'doc/fetchProjectCategories', payload: pid });
-      dispatch({ type: 'doc/fetchProjectDocs', payload: pid });
-      dispatch({ type: 'doc/fetchDocVersions', payload: pid });
+      dispatch({ type: 'docCategory/fetchProjectCategories', payload: pid });
+      dispatch({ type: 'docList/fetchProjectDocs', payload: pid });
+      dispatch({ type: 'docVersions/fetchDocVersions', payload: pid });
     }
     if (docId) {
       dispatch({
-        type: 'doc/fetchDocDetail',
+        type: 'docDetail/fetchDocDetail',
         payload: versionId ? { id: docId, version: Number(versionId) } : docId,
       });
     }
@@ -549,7 +549,7 @@ const DocEditorPage: React.FC = () => {
     (title: string) => {
       if (!currentDoc || currentDoc.name === title) return;
       dispatch({
-        type: 'doc/handleUpdateDoc',
+        type: 'docList/handleUpdateDoc',
         payload: { id: docId, data: { name: title } },
       });
     },
@@ -573,7 +573,7 @@ const DocEditorPage: React.FC = () => {
     if (outlineMode) {
       // 大纲模式：保存大纲到版本
       dispatch({
-        type: 'doc/saveDocVersionOutline',
+        type: 'docVersions/saveDocVersionOutline',
         payload: { versionId: currentVersion?.id, outline: content },
       }).then(() => {
         dispatch({ type: 'docEditor/setSaving', payload: false });
@@ -582,7 +582,7 @@ const DocEditorPage: React.FC = () => {
     } else if (versionOverviewMode) {
       // 版本总览模式：保存版本总览到文档
       dispatch({
-        type: 'doc/handleUpdateDoc',
+        type: 'docList/handleUpdateDoc',
         payload: { id: docId, data: { version_overview: content } },
       }).then(() => {
         dispatch({ type: 'docEditor/setSaving', payload: false });
@@ -597,7 +597,7 @@ const DocEditorPage: React.FC = () => {
         return;
       }
       dispatch({
-        type: 'doc/saveDocContent',
+        type: 'docDetail/saveDocContent',
         payload: {
           versionId: currentVersion.id,
           content,
@@ -618,7 +618,7 @@ const DocEditorPage: React.FC = () => {
       content: '将当前内容保存为新版本，原版本保留。',
       onOk: () => {
         dispatch({
-          type: 'doc/createDocVersion',
+          type: 'docVersions/createDocVersion',
           payload: { id: docId, content, remark: '手动保存的新版本' },
         });
       },

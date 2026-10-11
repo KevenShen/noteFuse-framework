@@ -52,9 +52,9 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
     tagList,
     docTags,
   } = useShallowSelector((state: any) => ({
-    categories: state.doc.docCategoryList,
-    docs: state.doc.docList,
-    docVersions: state.doc.docVersions,
+    categories: state.docCategory.docCategoryList,
+    docs: state.docList.docList,
+    docVersions: state.docVersions.docVersions,
     tagCategories: state.tag.tagCategories,
     tagList: state.tag.tagList,
     docTags: state.tag.docTags,

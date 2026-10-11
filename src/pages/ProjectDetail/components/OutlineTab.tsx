@@ -96,8 +96,8 @@ const CategoryNode: React.FC<{
 const OutlineTab: React.FC<OutlineTabProps> = ({ onSelectDoc }) => {
   // 自行从 model 获取所需数据
   const { categories, docs } = useShallowSelector((state: any) => ({
-    categories: state.doc.docCategoryList,
-    docs: state.doc.docList,
+    categories: state.docCategory.docCategoryList,
+    docs: state.docList.docList,
   }));
 
   // 一级分类（parent_id 为 null 或 0）

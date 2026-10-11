@@ -29,9 +29,9 @@ const DocSidebar: React.FC<DocSidebarProps> = ({
 }) => {
   // 自行从 model 获取所需数据
   const { categories, docs, docVersions } = useShallowSelector((state: any) => ({
-    categories: state.doc.docCategoryList,
-    docs: state.doc.docList,
-    docVersions: state.doc.docVersions,
+    categories: state.docCategory.docCategoryList,
+    docs: state.docList.docList,
+    docVersions: state.docVersions.docVersions,
   }));
 
   // 自行获取标签数据
