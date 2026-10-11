@@ -1,14 +1,103 @@
-/node_modules
-/.env.local
-/.umirc.local.ts
-/config/config.local.ts
-/src/.umi
-/src/.umi-production
-/src/.umi-test
-/.umi
-/.umi-production
-/.umi-test
-/dist
-/.mfsu
-.swc
-.turbopack
+# ==================== 依赖目录 ====================
+node_modules/
+.pnp
+.pnp.js
+
+# ==================== 构建产物 ====================
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# Umi
+.umi/
+.umi-production/
+.umi-test/
+src/.umi/
+src/.umi-production/
+src/.umi-test/
+.mfsu/
+.swc/
+.turbopack/
+
+# ==================== 环境变量与密钥（绝不提交） ====================
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+# 保留示例文件
+!.env.example
+
+# 密钥与证书
+*.pem
+*.key
+*.crt
+*.cer
+credentials.json
+service-account.json
+
+# ==================== 操作系统文件 ====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==================== IDE / 编辑器 ====================
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ==================== 日志文件 ====================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==================== 缓存目录 ====================
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.rpt2_cache/
+
+# ==================== 测试覆盖率 ====================
+coverage/
+.nyc_output/
+
+# ==================== 临时文件 ====================
+*.tmp
+*.bak
+*.old
+*.orig
+
+# ==================== 包管理 ====================
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ==================== 其他 ====================
+*.pid
+*.seed
+*.pid.lock
