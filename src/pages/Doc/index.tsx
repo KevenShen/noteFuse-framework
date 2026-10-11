@@ -100,7 +100,6 @@ const DocPage: React.FC = () => {
     // 数据状态
     currentDoc: modelCurrentDoc,
     docList: modelDocList,
-    docCategoryList: modelDocCategoryList,
     docVersions: modelDocVersions,
     docAnnotations,
     readMode,
@@ -124,7 +123,6 @@ const DocPage: React.FC = () => {
     loading: state.docDetail.loading,
     currentDoc: state.docDetail.currentDoc,
     docList: state.docList.docList,
-    docCategoryList: state.docCategory.docCategoryList,
     docVersions: state.docVersions.docVersions,
     docAnnotations: state.docAnnotations.docAnnotations,
     readMode: state.docDetail.readMode,
@@ -164,11 +162,6 @@ const DocPage: React.FC = () => {
   const currentProject = useMergedState({
     modelData: modelCurrentProject,
     loaderData: clientLoaderData?.currentProject,
-  });
-
-  const docCategoryList = useMergedState({
-    modelData: modelDocCategoryList,
-    loaderData: clientLoaderData?.docCategoryList,
   });
 
   const docList = useMergedState({
@@ -216,9 +209,6 @@ const DocPage: React.FC = () => {
     addAnnotationModalOpen: false,
   });
   const { showRightPanel, isFullscreen, addAnnotationModalOpen } = state;
-  // const [showRightPanel, setShowRightPanel] = useState(false);
-  // const [isFullscreen, setIsFullscreen] = useState(false);
-  // const [addAnnotationModalOpen, setAddAnnotationModalOpen] = useState(false);
 
   const markdownDocRef = useRef<MDXEditorRef>(null);
   const isProgramScrollingRef = useRef(false);
