@@ -2,12 +2,13 @@
 // 简介 Tab - Markdown 编辑器，仅文集创建者可编辑
 // 组件自治：自行从 model 获取 currentProject/introSaving/currentUser，自行 dispatch 保存
 import MDXEditor, { type MDXEditorRef } from '@/components/MDXEditor';
-import useCurrentUser from '@/hooks/useCurrentUser';
 import { useShallowSelector } from '@/hooks';
+import useCurrentUser from '@/hooks/useCurrentUser';
 import { CloseOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import { useDispatch } from '@umijs/max';
+import { useSetState } from 'ahooks';
 import { Button, Space, message } from 'antd';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useRef } from 'react';
 
 interface IntroTabProps {
   /** 文集 ID，用于 dispatch 保存简介 */
@@ -31,17 +32,20 @@ const IntroTab: React.FC<IntroTabProps> = ({ projectId }) => {
   // 仅文集创建者可编辑
   const canEdit = currentUser?.id === currentProject?.create_user_id;
 
-  // 编辑模式状态：默认只读
-  const [isEditing, setIsEditing] = useState(false);
-  // 编辑中的内容（独立于 intro，取消时可回退）
-  const [editContent, setEditContent] = useState(intro);
+  const [state, setState] = useSetState({
+    // 编辑模式状态：默认只读
+    isEditing: false,
+    // 编辑中的内容（独立于 intro，取消时可回退）
+    editContent: intro,
+  });
+  const { isEditing, editContent } = state;
+
   // MDXEditor 实例引用（编辑模式下用于获取内容）
   const editorRef = useRef<MDXEditorRef>(null);
 
   // 点击"编辑"：进入编辑模式，初始化编辑内容
   const handleEdit = useCallback(() => {
-    setEditContent(intro);
-    setIsEditing(true);
+    setState({ isEditing: true, editContent: intro });
   }, [intro]);
 
   // 点击"保存"：保存内容并返回只读模式
@@ -52,19 +56,18 @@ const IntroTab: React.FC<IntroTabProps> = ({ projectId }) => {
       type: 'projectDetail/handleUpdateProjectIntro',
       payload: { id: projectId, intro: content },
     });
-    setIsEditing(false);
+    setState({ isEditing: false });
     message.success('简介已保存');
   }, [editContent, dispatch, projectId]);
 
   // 点击"取消"：放弃修改，返回只读模式
   const handleCancel = useCallback(() => {
-    setEditContent(intro);
-    setIsEditing(false);
+    setState({ editContent: intro, isEditing: false });
   }, [intro]);
 
   // 编辑器内容变化回调（仅编辑模式下更新 editContent）
   const handleChange = useCallback((value: string) => {
-    setEditContent(value);
+    setState({ editContent: value });
   }, []);
 
   if (!intro && !canEdit) {
