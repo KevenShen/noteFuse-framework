@@ -70,11 +70,6 @@ export function validateCreateProjectRequest(
     return '文集名称长度应为1-50位';
   }
 
-  // 简介长度校验（如果提供）
-  if (data.intro !== undefined && data.intro.length > 500) {
-    return '文集简介长度不能超过500位';
-  }
-
   // 角色校验（如果提供）
   if (data.role !== undefined && ![0, 1].includes(data.role)) {
     return '角色只能是 0（公开）或 1（私有）';
@@ -112,11 +107,6 @@ export function validateUpdateProjectRequest(
     (data.name.length < 1 || data.name.length > 50)
   ) {
     return '文集名称长度应为1-50位';
-  }
-
-  // 简介长度校验（如果提供）
-  if (data.intro !== undefined && data.intro.length > 500) {
-    return '文集简介长度不能超过500位';
   }
 
   // 角色校验（如果提供）

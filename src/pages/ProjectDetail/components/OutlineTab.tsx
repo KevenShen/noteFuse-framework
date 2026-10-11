@@ -33,13 +33,21 @@ const CategoryNode: React.FC<{
       <div className="outline-group-title">
         <FolderOpenOutlined style={{ marginRight: 8, color: '#faad14' }} />
         {category.name}
-        <span style={{ marginLeft: 8, color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
+        <span
+          style={{ marginLeft: 8, color: 'rgba(0,0,0,0.45)', fontSize: 12 }}
+        >
           ({catDocs.length})
         </span>
       </div>
       <div className="outline-children">
         {catDocs.length === 0 && children.length === 0 && (
-          <div style={{ padding: '8px 0', color: 'rgba(0,0,0,0.25)', fontSize: 12 }}>
+          <div
+            style={{
+              padding: '8px 0',
+              color: 'rgba(0,0,0,0.25)',
+              fontSize: 12,
+            }}
+          >
             暂无文档
           </div>
         )}
@@ -56,7 +64,12 @@ const CategoryNode: React.FC<{
               {curVer && (
                 <Tag
                   color={curVer.status === 'draft' ? 'orange' : 'blue'}
-                  style={{ marginLeft: 8, fontSize: 11, lineHeight: '18px', padding: '0 6px' }}
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 11,
+                    lineHeight: '18px',
+                    padding: '0 6px',
+                  }}
                 >
                   {curVer.version}
                 </Tag>

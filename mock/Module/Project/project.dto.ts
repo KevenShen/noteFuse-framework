@@ -47,7 +47,7 @@ export type GetProjectDetailResponse = MockProject;
 export interface CreateProjectRequest {
   /** 文集名称（1-50个字符） */
   name: string;
-  /** 文集简介（最多500个字符） */
+  /** 文集简介 */
   intro?: string;
   /** 图标（默认 FolderOutlined） */
   icon?: string;
@@ -74,7 +74,7 @@ export type CreateProjectResponse = MockProject;
 export interface UpdateProjectRequest {
   /** 文集名称（可选，1-50个字符） */
   name?: string;
-  /** 文集简介（可选，最多500个字符） */
+  /** 文集简介（可选） */
   intro?: string;
   /** 图标（可选） */
   icon?: string;

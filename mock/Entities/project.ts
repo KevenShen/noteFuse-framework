@@ -817,7 +817,7 @@ export const categoryTable: MockTable<MockProjectCategory> =
  *
  * 【数据验证】
  * - name：必填，长度 1-100
- * - intro：可选，最大长度 500
+ * - intro：可选，不限制长度
  * - project_category_id：必须为非负整数
  *
  * 【事件钩子】
@@ -891,8 +891,6 @@ export const projectTable: MockTable<MockProject> = createTable<MockProject>({
       intro: {
         required: false,
         type: 'string',
-        maxLength: 500,
-        message: '文集简介不能超过500个字符',
       },
       project_category_id: {
         required: true,

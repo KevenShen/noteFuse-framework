@@ -75,10 +75,5 @@ export function validateUpdateProjectIntroRequest(
     return '文集简介不能为空';
   }
 
-  // 2. 简介长度校验
-  if (data.intro.length > 500) {
-    return '文集简介长度不能超过500个字符';
-  }
-
   return null;
 }
