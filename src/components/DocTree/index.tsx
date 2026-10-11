@@ -35,9 +35,10 @@ import {
   SettingFilled,
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
+import { useSetState } from 'ahooks';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Input, Space, Tag, Tooltip, Tree } from 'antd';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import ManageModal from './ManageModal';
 import VersionModal from './VersionModal';
 import './index.less';
@@ -156,22 +157,31 @@ const DocTree: React.FC<DocTreeProps> = ({
   className,
   style,
 }) => {
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [state, setState] = useSetState({
+    searchKeyword: '',
+    expandedKeys: [] as string[],
+    // 管理弹窗状态
+    modalVisible: false,
+    modalAction: null as ManageActionType | null,
+    modalData: null as any,
+    // 版本弹窗状态
+    versionModalVisible: false,
+    versionModalAction: null as VersionActionType | null,
+    versionModalData: null as any,
+    versionModalDocInfo: null as DocItem | null,
+  });
+  const {
+    searchKeyword,
+    expandedKeys,
+    modalVisible,
+    modalAction,
+    modalData,
+    versionModalVisible,
+    versionModalAction,
+    versionModalData,
+    versionModalDocInfo,
+  } = state;
   const expandedInitialized = useRef(false);
-
-  // 管理弹窗状态
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalAction, setModalAction] = useState<ManageActionType | null>(null);
-  const [modalData, setModalData] = useState<any>(null);
-
-  // 版本弹窗状态
-  const [versionModalVisible, setVersionModalVisible] = useState(false);
-  const [versionModalAction, setVersionModalAction] =
-    useState<VersionActionType | null>(null);
-  const [versionModalData, setVersionModalData] = useState<any>(null);
-  const [versionModalDocInfo, setVersionModalDocInfo] =
-    useState<DocItem | null>(null);
 
   // 分类 + 文档 转树（支持多版本）
   const treeData = useMemo(
@@ -217,10 +227,11 @@ const DocTree: React.FC<DocTreeProps> = ({
 
     if (keysToExpand.length > 0) {
       // 合并已有展开状态，避免覆盖用户手动展开/折叠
-      setExpandedKeys((prev) => {
-        const merged = new Set([...prev, ...keysToExpand]);
-        return Array.from(merged);
-      });
+      setState((prev) => ({
+        expandedKeys: Array.from(
+          new Set([...prev.expandedKeys, ...keysToExpand]),
+        ),
+      }));
       expandedInitialized.current = true;
     }
   }, [treeData, defaultExpandAll, defaultExpandVersion]);
@@ -243,9 +254,11 @@ const DocTree: React.FC<DocTreeProps> = ({
 
   // 打开管理弹窗
   const openModal = (action: ManageActionType, data?: any) => {
-    setModalAction(action);
-    setModalData(data);
-    setModalVisible(true);
+    setState({
+      modalAction: action,
+      modalData: data,
+      modalVisible: true,
+    });
   };
 
   // 打开版本弹窗
@@ -254,10 +267,12 @@ const DocTree: React.FC<DocTreeProps> = ({
     data?: any,
     docInfo?: DocItem,
   ) => {
-    setVersionModalAction(action);
-    setVersionModalData(data);
-    setVersionModalDocInfo(docInfo || null);
-    setVersionModalVisible(true);
+    setState({
+      versionModalAction: action,
+      versionModalData: data,
+      versionModalDocInfo: docInfo || null,
+      versionModalVisible: true,
+    });
   };
 
   // 管理操作提交（支持异步）
@@ -274,9 +289,11 @@ const DocTree: React.FC<DocTreeProps> = ({
         const parentId = data.parent_id || 0;
         if (parentId > 0) {
           const parentKey = `cat-${parentId}`;
-          setExpandedKeys((prev) =>
-            prev.includes(parentKey) ? prev : [...prev, parentKey],
-          );
+          setState((prev) => ({
+            expandedKeys: prev.expandedKeys.includes(parentKey)
+              ? prev.expandedKeys
+              : [...prev.expandedKeys, parentKey],
+          }));
         }
       }
     } else {
@@ -297,9 +314,11 @@ const DocTree: React.FC<DocTreeProps> = ({
     // 新增版本成功后，自动展开文档节点
     if (action === 'add-version' && data.doc_id) {
       const docKey = String(data.doc_id);
-      setExpandedKeys((prev) =>
-        prev.includes(docKey) ? prev : [...prev, docKey],
-      );
+      setState((prev) => ({
+        expandedKeys: prev.expandedKeys.includes(docKey)
+          ? prev.expandedKeys
+          : [...prev.expandedKeys, docKey],
+      }));
     }
   };
 
@@ -631,7 +650,7 @@ const DocTree: React.FC<DocTreeProps> = ({
                 allowClear
                 size="small"
                 value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
+                onChange={(e) => setState({ searchKeyword: e.target.value })}
                 prefix={<SearchOutlined />}
               />
             </div>
@@ -686,7 +705,7 @@ const DocTree: React.FC<DocTreeProps> = ({
               : selectedKeys
           }
           expandedKeys={effectiveExpandedKeys}
-          onExpand={(keys) => setExpandedKeys(keys as string[])}
+          onExpand={(keys) => setState({ expandedKeys: keys as string[] })}
           onSelect={handleSelect}
           treeData={filteredTree}
           titleRender={titleRender}
@@ -720,7 +739,7 @@ const DocTree: React.FC<DocTreeProps> = ({
         action={modalAction}
         initialData={modalData}
         categories={categories}
-        onClose={() => setModalVisible(false)}
+        onClose={() => setState({ modalVisible: false })}
         onSubmit={handleManageSubmit}
       />
 
@@ -731,7 +750,7 @@ const DocTree: React.FC<DocTreeProps> = ({
         initialData={versionModalData}
         docInfo={versionModalDocInfo || undefined}
         docVersions={versionModalDocInfo?.versions || []}
-        onClose={() => setVersionModalVisible(false)}
+        onClose={() => setState({ versionModalVisible: false })}
         onSubmit={handleVersionSubmit}
       />
     </div>
