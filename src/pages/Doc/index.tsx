@@ -11,8 +11,8 @@ import {
 import ProjectDocDetailLayout from '@/layouts/ProjectDocDetailLayout';
 import {
   getDocDetail,
-  getProjectDocCategories,
   getProjectDetail,
+  getProjectDocCategories,
   getProjectDocVersions,
   getProjectDocs,
 } from '@/services';
@@ -22,8 +22,9 @@ import {
   VerticalAlignTopOutlined,
 } from '@ant-design/icons';
 import { history, useClientLoaderData, useDispatch } from '@umijs/max';
+import { useSetState } from 'ahooks';
 import { FloatButton, Modal, Space, Tag, message } from 'antd';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   DocContent,
   DocRightPanel,
@@ -36,7 +37,6 @@ import type { AnchorItem } from './types';
 import {
   filterMarkers,
   generateMarkerId,
-  insertMarkerAfterLine,
   insertMarkerAfterLineInContentWithMarkers,
   removeMarker,
   type AnnotationItem,
@@ -210,9 +210,15 @@ const DocPage: React.FC = () => {
   });
 
   // ==================== 页面级 UI 状态（仅保留布局相关） ====================
-  const [showRightPanel, setShowRightPanel] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [addAnnotationModalOpen, setAddAnnotationModalOpen] = useState(false);
+  const [state, setState] = useSetState({
+    showRightPanel: false,
+    isFullscreen: false,
+    addAnnotationModalOpen: false,
+  });
+  const { showRightPanel, isFullscreen, addAnnotationModalOpen } = state;
+  // const [showRightPanel, setShowRightPanel] = useState(false);
+  // const [isFullscreen, setIsFullscreen] = useState(false);
+  // const [addAnnotationModalOpen, setAddAnnotationModalOpen] = useState(false);
 
   const markdownDocRef = useRef<MDXEditorRef>(null);
   const isProgramScrollingRef = useRef(false);
@@ -250,7 +256,7 @@ const DocPage: React.FC = () => {
   // ==================== 全屏监听 ====================
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      setState({ isFullscreen: !!document.fullscreenElement });
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () =>
@@ -283,7 +289,7 @@ const DocPage: React.FC = () => {
 
   // 添加批注：打开选择批注位置的弹窗
   const handleAddAnnotation = () => {
-    setAddAnnotationModalOpen(true);
+    setState({ addAnnotationModalOpen: true });
   };
 
   // 确认添加批注：在选中行后插入标记，创建空批注，切换到编辑模式
@@ -327,13 +333,19 @@ const DocPage: React.FC = () => {
       type: 'docAnnotations/setOriginalContentBeforeEdit',
       payload: contentWithMarker,
     });
-    dispatch({ type: 'docAnnotations/setNewAnnotationMarkerId', payload: markerId });
-    dispatch({ type: 'docAnnotations/setEditingAnnotation', payload: newAnnotation });
+    dispatch({
+      type: 'docAnnotations/setNewAnnotationMarkerId',
+      payload: markerId,
+    });
+    dispatch({
+      type: 'docAnnotations/setEditingAnnotation',
+      payload: newAnnotation,
+    });
     dispatch({ type: 'docAnnotations/setAnnotationContent', payload: '' });
     dispatch({ type: 'docAnnotations/setAnnotationEditMode', payload: true });
 
     // 7. 关闭弹窗
-    setAddAnnotationModalOpen(false);
+    setState({ addAnnotationModalOpen: false });
 
     // 8. 自动切换到批注模式
     dispatch({ type: 'docDetail/setReadMode', payload: 'annotation' });
@@ -394,10 +406,19 @@ const DocPage: React.FC = () => {
 
   // 编辑已有批注
   const handleEditAnnotation = (annotation: AnnotationItem) => {
-    dispatch({ type: 'docAnnotations/setEditingAnnotation', payload: annotation });
-    dispatch({ type: 'docAnnotations/setAnnotationContent', payload: annotation.content });
+    dispatch({
+      type: 'docAnnotations/setEditingAnnotation',
+      payload: annotation,
+    });
+    dispatch({
+      type: 'docAnnotations/setAnnotationContent',
+      payload: annotation.content,
+    });
     dispatch({ type: 'docAnnotations/setAnnotationEditMode', payload: true });
-    dispatch({ type: 'docAnnotations/setNewAnnotationMarkerId', payload: null });
+    dispatch({
+      type: 'docAnnotations/setNewAnnotationMarkerId',
+      payload: null,
+    });
   };
 
   // 删除批注
@@ -621,7 +642,7 @@ const DocPage: React.FC = () => {
             anchors={anchors}
             docId={docId}
             projectId={Number(projectId)}
-            onClose={() => setShowRightPanel(false)}
+            onClose={() => setState({ showRightPanel: false })}
             onAnchorClick={handleAnchorClick}
             onJumpToAnnotation={handleJumpToAnnotation}
             onEditAnnotation={handleEditAnnotation}
@@ -671,7 +692,7 @@ const DocPage: React.FC = () => {
               icon={<UnorderedListOutlined />}
               tooltip="显示工具坞"
               style={{ right: 24, bottom: 24, zIndex: 9999 }}
-              onClick={() => setShowRightPanel(true)}
+              onClick={() => setState({ showRightPanel: true })}
             />
           )}
 
@@ -692,7 +713,7 @@ const DocPage: React.FC = () => {
       <AddAnnotationModal
         open={addAnnotationModalOpen}
         content={filterMarkers(currentVersion?.content || '')}
-        onCancel={() => setAddAnnotationModalOpen(false)}
+        onCancel={() => setState({ addAnnotationModalOpen: false })}
         onConfirm={handleConfirmAddAnnotation}
       />
     </>
