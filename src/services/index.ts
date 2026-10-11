@@ -32,7 +32,7 @@ export {
   getProjectDetail,
   updateProjectIntro,
   // 文档结构
-  getProjectCategories,
+  getProjectDocCategories,
   getProjectDocs,
   getProjectDocVersions,
   // 文档详情与内容

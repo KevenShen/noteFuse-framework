@@ -10,7 +10,7 @@ import {
 import ProjectDocDetailLayout from '@/layouts/ProjectDocDetailLayout';
 import {
   getAiOutline,
-  getProjectCategories,
+  getProjectDocCategories,
   getProjectDetail,
   getProjectDocVersions,
   getProjectDocs,
@@ -53,7 +53,7 @@ export async function clientLoader() {
     const [projectRes, categoriesRes, docsRes, versionsRes, outlineRes] =
       await Promise.all([
         getProjectDetail({ id: projectId }),
-        getProjectCategories({ id: projectId }),
+        getProjectDocCategories({ id: projectId }),
         getProjectDocs({ id: projectId }),
         getProjectDocVersions({ id: projectId }),
         getAiOutline({ id: projectId }),

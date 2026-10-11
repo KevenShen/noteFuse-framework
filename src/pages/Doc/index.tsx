@@ -11,7 +11,7 @@ import {
 import ProjectDocDetailLayout from '@/layouts/ProjectDocDetailLayout';
 import {
   getDocDetail,
-  getProjectCategories,
+  getProjectDocCategories,
   getProjectDetail,
   getProjectDocVersions,
   getProjectDocs,
@@ -69,7 +69,7 @@ export async function clientLoader() {
         getDocDetail(
           versionId ? { id: docId, version: Number(versionId) } : { id: docId },
         ),
-        getProjectCategories({ id: projectId }),
+        getProjectDocCategories({ id: projectId }),
         getProjectDocs({ id: projectId }),
         getProjectDocVersions({ id: projectId }),
       ]);

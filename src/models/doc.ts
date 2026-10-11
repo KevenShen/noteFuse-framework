@@ -305,7 +305,7 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        const res = yield call(docService.getProjectCategories, {
+        const res = yield call(docService.getProjectDocCategories, {
           id: payload,
         });
         yield put({ type: 'saveDocCategoryList', payload: res.data });

@@ -46,8 +46,8 @@ export async function updateProjectIntro(
 
 // ==================== 文集内文档结构 ====================
 
-/** 文集内分类列表 */
-export async function getProjectCategories(
+/** 文集内文档分类列表（按文集ID获取该文集下的所有文档分类） */
+export async function getProjectDocCategories(
   params: { id: number },
   options?: { [key: string]: any },
 ) {
