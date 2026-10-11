@@ -26,12 +26,12 @@ import { useSetState } from 'ahooks';
 import { FloatButton, Modal, Space, Tag, message } from 'antd';
 import React, { useEffect, useMemo, useRef } from 'react';
 import {
+  AddAnnotationModal,
   DocContent,
   DocRightPanel,
   DocSidebar,
   DocToolbar,
 } from './components';
-import AddAnnotationModal from './components/AddAnnotationModal';
 import './index.less';
 import type { AnchorItem } from './types';
 import {
