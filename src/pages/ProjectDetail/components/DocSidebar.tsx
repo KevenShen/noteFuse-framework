@@ -1,6 +1,6 @@
 // src/pages/ProjectDetail/components/DocSidebar.tsx
 // 文档目录侧边栏 - 可折叠面板，分类+文档树，支持搜索和多版本
-// 组件自治：自行从 model 获取 categories/docs/docVersions
+// 组件自治：自行从 model 获取 docCategories/docs/docVersions
 import DocTree from '@/components/DocTree';
 import type { DocVersion } from '@/components/DocTree/types';
 import { useShallowSelector } from '@/hooks';
@@ -16,11 +16,13 @@ interface DocSidebarProps {
 
 const DocSidebar: React.FC<DocSidebarProps> = ({ projectId, onSelectDoc }) => {
   // 自行从 model 获取所需数据
-  const { categories, docs, docVersions } = useShallowSelector((state: any) => ({
-    categories: state.doc.docCategoryList,
-    docs: state.doc.docList,
-    docVersions: state.doc.docVersions,
-  }));
+  const { docCategories, docs, docVersions } = useShallowSelector(
+    (state: any) => ({
+      docCategories: state.doc.docCategoryList,
+      docs: state.doc.docList,
+      docVersions: state.doc.docVersions,
+    }),
+  );
 
   // 展开/收缩状态持久化到 localStorage，刷新后保留用户偏好
   const STORAGE_KEY = 'docSidebar_expanded';
@@ -71,7 +73,9 @@ const DocSidebar: React.FC<DocSidebarProps> = ({ projectId, onSelectDoc }) => {
         d.versions?.some((v: any) => v.id === versionId),
       );
       if (doc) {
-        history.push(`/doc/${doc.id}?project_id=${projectId}&version=${versionId}`);
+        history.push(
+          `/doc/${doc.id}?project_id=${projectId}&version=${versionId}`,
+        );
       }
     } else {
       // 文档节点
@@ -88,10 +92,7 @@ const DocSidebar: React.FC<DocSidebarProps> = ({ projectId, onSelectDoc }) => {
     <div className="editor-sidebar">
       <div className="custom-accordion">
         <div className={`custom-accordion-item ${expanded ? 'active' : ''}`}>
-          <div
-            className="custom-accordion-header"
-            onClick={toggleExpanded}
-          >
+          <div className="custom-accordion-header" onClick={toggleExpanded}>
             <span className="custom-accordion-expand-icon">
               {expanded ? '▼' : '▶'}
             </span>
@@ -108,7 +109,7 @@ const DocSidebar: React.FC<DocSidebarProps> = ({ projectId, onSelectDoc }) => {
               <div className="custom-accordion-content-box">
                 <div className="sidebar-doc-tree">
                   <DocTree
-                    categories={categories || []}
+                    categories={docCategories || []}
                     docs={docsWithVersions}
                     onSelect={handleSelect}
                     showManage={false}
