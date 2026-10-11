@@ -182,7 +182,7 @@ const DocPage: React.FC = () => {
     handleEditAnnotation,
     handleDeleteAnnotation,
     handleJumpToAnnotation,
-  } = useAnnotationManager(docId, versionId || undefined, markdownDocRef);
+  } = useAnnotationManager(docId, versionId || undefined);
 
   // ==================== 全屏监听 ====================
   useEffect(() => {

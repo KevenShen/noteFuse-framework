@@ -27,9 +27,7 @@ const AddAnnotationModal = forwardRef<AddAnnotationModalRef, AddAnnotationModalP
     // 从 useAnnotationManager 获取原文内容和确认添加逻辑
     const { getPureContent, handleConfirmAddAnnotation } = useAnnotationManager(
       docId,
-      versionId,
-      // markdownDocRef 不需要，因为弹窗不涉及滚动
-      { current: null } as any,
+      versionId || undefined,
     );
 
     const content = getPureContent();
