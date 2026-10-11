@@ -5,16 +5,9 @@ import { useShallowSelector } from '@/hooks';
 import type { AiOutline, AiOutlineChapter } from '@/pages/Project/types';
 import { RobotOutlined } from '@ant-design/icons';
 import { useDispatch } from '@umijs/max';
-import {
-  Button,
-  Divider,
-  Input,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
-import React, { useState } from 'react';
+import { useSetState } from 'ahooks';
+import { Button, Divider, Input, Space, Tag, Typography, message } from 'antd';
+import React from 'react';
 
 const { Paragraph, Text } = Typography;
 
@@ -32,19 +25,23 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
     loading: state.doc.loading,
   }));
 
-  const [editMode, setEditMode] = useState(false);
-  const [editingOutline, setEditingOutline] = useState<AiOutline | null>(null);
+  const [state, setState] = useSetState({
+    editMode: false,
+    editingOutline: null as AiOutline | null,
+  });
+  const { editMode, editingOutline } = state;
 
   // 进入编辑模式
   const handleEnterEdit = () => {
-    setEditingOutline(JSON.parse(JSON.stringify(outline)));
-    setEditMode(true);
+    setState({
+      editingOutline: JSON.parse(JSON.stringify(outline)),
+      editMode: true,
+    });
   };
 
   // 取消编辑
   const handleCancelEdit = () => {
-    setEditMode(false);
-    setEditingOutline(null);
+    setState({ editMode: false, editingOutline: null });
   };
 
   // 保存
@@ -55,10 +52,13 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
     }
     dispatch({
       type: 'doc/handleSaveAiOutline',
-      payload: { id: projectId, summary: editingOutline.summary, chapters: editingOutline.chapters },
+      payload: {
+        id: projectId,
+        summary: editingOutline.summary,
+        chapters: editingOutline.chapters,
+      },
     });
-    setEditMode(false);
-    setEditingOutline(null);
+    setState({ editMode: false, editingOutline: null });
   };
 
   // 生成大纲
@@ -67,22 +67,28 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
   };
 
   // 更新章节字段
-  const handleUpdateChapter = (idx: number, field: keyof AiOutlineChapter, value: any) => {
+  const handleUpdateChapter = (
+    idx: number,
+    field: keyof AiOutlineChapter,
+    value: any,
+  ) => {
     if (!editingOutline) return;
     const newChapters = [...editingOutline.chapters];
     newChapters[idx] = { ...newChapters[idx], [field]: value };
-    setEditingOutline({ ...editingOutline, chapters: newChapters });
+    setState({ editingOutline: { ...editingOutline, chapters: newChapters } });
   };
 
   // 添加章节
   const handleAddChapter = () => {
     if (!editingOutline) return;
-    setEditingOutline({
-      ...editingOutline,
-      chapters: [
-        ...editingOutline.chapters,
-        { title: '新章节', desc: '章节描述', docs: [] },
-      ],
+    setState({
+      editingOutline: {
+        ...editingOutline,
+        chapters: [
+          ...editingOutline.chapters,
+          { title: '新章节', desc: '章节描述', docs: [] },
+        ],
+      },
     });
   };
 
@@ -91,7 +97,7 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
     if (!editingOutline) return;
     const newChapters = [...editingOutline.chapters];
     newChapters.splice(idx, 1);
-    setEditingOutline({ ...editingOutline, chapters: newChapters });
+    setState({ editingOutline: { ...editingOutline, chapters: newChapters } });
   };
 
   return (
@@ -114,7 +120,12 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
               <Button size="small" onClick={handleCancelEdit}>
                 取消
               </Button>
-              <Button type="primary" size="small" onClick={handleSave} loading={loading}>
+              <Button
+                type="primary"
+                size="small"
+                onClick={handleSave}
+                loading={loading}
+              >
                 保存
               </Button>
             </>
@@ -152,7 +163,9 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
       {/* 加载中 */}
       {loading && (
         <div style={{ padding: '60px 0', textAlign: 'center', color: '#999' }}>
-          <RobotOutlined style={{ fontSize: 32, marginBottom: 12, color: '#1890ff' }} />
+          <RobotOutlined
+            style={{ fontSize: 32, marginBottom: 12, color: '#1890ff' }}
+          />
           <div>AI正在分析文集内容，请稍候...</div>
         </div>
       )}
@@ -165,7 +178,12 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
             <Input.TextArea
               value={editingOutline.summary}
               onChange={(e) =>
-                setEditingOutline({ ...editingOutline, summary: e.target.value })
+                setState({
+                  editingOutline: {
+                    ...editingOutline,
+                    summary: e.target.value,
+                  },
+                })
               }
               rows={4}
               placeholder="请输入文集整体总结..."
@@ -194,7 +212,9 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
                   <div className="chapter-edit-row">
                     <Input
                       value={chapter.title}
-                      onChange={(e) => handleUpdateChapter(idx, 'title', e.target.value)}
+                      onChange={(e) =>
+                        handleUpdateChapter(idx, 'title', e.target.value)
+                      }
                       placeholder="章节标题"
                       size="small"
                       style={{ fontWeight: 600 }}
@@ -210,7 +230,9 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
                   </div>
                   <Input
                     value={chapter.desc}
-                    onChange={(e) => handleUpdateChapter(idx, 'desc', e.target.value)}
+                    onChange={(e) =>
+                      handleUpdateChapter(idx, 'desc', e.target.value)
+                    }
                     placeholder="章节描述"
                     size="small"
                     style={{ marginTop: 8, marginBottom: 8 }}
@@ -239,7 +261,13 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
         <div className="ai-outline-content">
           <div className="ai-summary">
             <div className="ai-section-title">整体总结</div>
-            <Paragraph style={{ lineHeight: 1.8, color: 'rgba(0,0,0,0.75)', marginBottom: 0 }}>
+            <Paragraph
+              style={{
+                lineHeight: 1.8,
+                color: 'rgba(0,0,0,0.75)',
+                marginBottom: 0,
+              }}
+            >
               {outline.summary}
             </Paragraph>
           </div>
@@ -270,9 +298,13 @@ const AiOutlineTab: React.FC<AiOutlineTabProps> = ({ projectId }) => {
       {/* 空状态 */}
       {!loading && !editMode && !outline && (
         <div style={{ padding: '60px 0', textAlign: 'center', color: '#999' }}>
-          <RobotOutlined style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }} />
+          <RobotOutlined
+            style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }}
+          />
           <div style={{ marginBottom: 8 }}>暂无总结大纲</div>
-          <div className="ai-empty-hint">点击上方按钮AI生成，或手动编辑创建</div>
+          <div className="ai-empty-hint">
+            点击上方按钮AI生成，或手动编辑创建
+          </div>
         </div>
       )}
     </div>
