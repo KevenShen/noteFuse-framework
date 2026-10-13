@@ -1,6 +1,7 @@
 // src/pages/Quick/components/QuickGroupManager.tsx
-// 快捷操作页面 - 分组管理器弹窗
+// 快捷操作页面 - 分组管理器弹窗（组件自治：直接从 Dva model 取数 + 增删改分组）
 import { DeleteOutlined, EditOutlined, FolderOutlined, PlusOutlined } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Button,
   Empty,
@@ -12,19 +13,29 @@ import {
   Tag,
   message,
 } from 'antd';
+import { useDispatch } from '@umijs/max';
 import React, { useState } from 'react';
-import type { QuickGroupManagerProps } from '../types';
+
+interface QuickGroupManagerProps {
+  open: boolean;
+  onClose: () => void;
+  onDeleteGroup?: (id: number) => void; // 删除分组后的回调（如重置选中分组）
+}
 
 const QuickGroupManager: React.FC<QuickGroupManagerProps> = ({
   open,
-  groups,
-  loading,
-  submitting,
   onClose,
-  onCreate,
-  onRename,
-  onDelete,
+  onDeleteGroup,
 }) => {
+  const dispatch = useDispatch();
+
+  // 直接从 Dva model 取数
+  const {
+    quickGroups: groups,
+    quickGroupsLoading: loading,
+    quickGroupSubmitting: submitting,
+  } = useShallowSelector((state: any) => state.quick);
+
   const [newGroupName, setNewGroupName] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -35,7 +46,10 @@ const QuickGroupManager: React.FC<QuickGroupManagerProps> = ({
       message.warning('请输入分组名称');
       return;
     }
-    onCreate(newGroupName.trim());
+    dispatch({
+      type: 'quick/createQuickGroup',
+      payload: { name: newGroupName.trim() },
+    });
     setNewGroupName('');
   };
 
@@ -52,10 +66,22 @@ const QuickGroupManager: React.FC<QuickGroupManagerProps> = ({
       return;
     }
     if (editingId !== null) {
-      onRename(editingId, editingName.trim());
+      dispatch({
+        type: 'quick/updateQuickGroup',
+        payload: { id: editingId, name: editingName.trim() },
+      });
     }
     setEditingId(null);
     setEditingName('');
+  };
+
+  // 删除分组
+  const handleDelete = (id: number) => {
+    dispatch({
+      type: 'quick/deleteQuickGroup',
+      payload: { id },
+    });
+    onDeleteGroup?.(id);
   };
 
   return (
@@ -96,7 +122,7 @@ const QuickGroupManager: React.FC<QuickGroupManagerProps> = ({
         loading={loading}
         dataSource={groups}
         locale={{ emptyText: <Empty description="暂无分组，快去创建吧" /> }}
-        renderItem={(group) => (
+        renderItem={(group: any) => (
           <List.Item
             actions={[
               editingId === group.id ? (
@@ -123,7 +149,7 @@ const QuickGroupManager: React.FC<QuickGroupManagerProps> = ({
                 key="delete"
                 title="确定删除该分组？"
                 description="删除后分组内的操作项将被移除"
-                onConfirm={() => onDelete(group.id)}
+                onConfirm={() => handleDelete(group.id)}
                 okText="删除"
                 cancelText="取消"
               >

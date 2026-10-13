@@ -13,8 +13,7 @@ import {
 } from '@/hooks';
 import { getCategoryList, getProjectList } from '@/services';
 import {
-  extractListData,
-  extractPaginationData,
+  extractListWithPagination,
   extractResponseData,
 } from '@/utils/clientLoader';
 import { useClientLoaderData, useDispatch } from '@umijs/max';
@@ -39,9 +38,8 @@ export async function clientLoader() {
     const projectCategoryList = Array.isArray(categoriesData)
       ? categoriesData
       : categoriesData.list || [];
-    const projectList = extractListData<ProjectItem>(listRes);
-    const { total: projectTotal, page: projectPage } =
-      extractPaginationData(listRes);
+    const { list: projectList, total: projectTotal, page: projectPage } =
+      extractListWithPagination<ProjectItem>(listRes);
 
     return {
       projectCategoryList,

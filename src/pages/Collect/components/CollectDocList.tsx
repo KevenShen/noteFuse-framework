@@ -1,11 +1,12 @@
 // src/pages/Collect/components/CollectDocList.tsx
-// 收藏页面 - 右侧收藏文档列表（含翻页、取消收藏、移动分组）
+// 收藏页面 - 收藏文档列表（组件自治：直接从 Dva model 取数 + 翻页 + 查看 + 取消收藏 + 移动分组）
 import {
   DeleteOutlined,
   EyeOutlined,
   SwapOutlined,
   StarFilled,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Avatar,
   Button,
@@ -20,42 +21,120 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { history, useDispatch } from '@umijs/max';
 import dayjs from 'dayjs';
-import React from 'react';
-import type { CollectDocItem, CollectDocListProps, CollectGroup } from '../types';
+import React, { useCallback, useMemo } from 'react';
+import type { CollectDocItem, CollectGroup } from '../types';
 
 const { Text } = Typography;
 
+interface CollectDocListProps {
+  activeGroupId: number;
+  pageSize?: number;
+}
+
 const CollectDocList: React.FC<CollectDocListProps> = ({
-  list,
-  loading,
-  total,
-  page,
-  pageSize,
-  activeGroupName,
-  onPageChange,
-  onView,
-  onCancelCollect,
-  onMoveGroup,
-  groups,
-  showMove = true,
+  activeGroupId,
+  pageSize = 10,
 }) => {
+  const dispatch = useDispatch();
+
+  // 直接从 Dva model 取数
+  const {
+    collectList: list,
+    collectLoading: loading,
+    collectTotal: total,
+    collectPage: page,
+    collectGroups: groups,
+  } = useShallowSelector((state: any) => state.collect);
+
+  // 当前分组名称
+  const activeGroupName = useMemo(() => {
+    if (activeGroupId === -1) return '全部收藏';
+    if (activeGroupId === 0) return '未分组';
+    const group = (groups || []).find(
+      (g: CollectGroup) => g.id === activeGroupId,
+    );
+    return group?.name || '未知分组';
+  }, [activeGroupId, groups]);
+
+  // ==================== 数据加载 ====================
+  const fetchList = useCallback(
+    (pageNum: number) => {
+      dispatch({
+        type: 'collect/fetchCollectList',
+        payload: {
+          page: pageNum,
+          page_size: pageSize,
+          group_id: activeGroupId,
+          type: 'doc',
+        },
+      });
+    },
+    [dispatch, pageSize, activeGroupId],
+  );
+
+  // ==================== 事件处理 ====================
+
+  // 翻页
+  const handlePageChange = (pageNum: number) => {
+    fetchList(pageNum);
+  };
+
+  // 查看文档
+  const handleView = (doc: CollectDocItem) => {
+    history.push(`/doc/${doc.id}?project_id=${doc.project_id}`);
+  };
+
+  // 取消收藏
+  const handleCancelCollect = (doc: CollectDocItem) => {
+    dispatch({
+      type: 'collect/cancelCollect',
+      payload: {
+        id: doc.collect_id,
+        group_id: activeGroupId,
+        page,
+        page_size: pageSize,
+        type: 'doc',
+      },
+    });
+  };
+
+  // 移动分组
+  const handleMoveGroup = (doc: CollectDocItem, groupId: number) => {
+    dispatch({
+      type: 'collect/moveCollect',
+      payload: {
+        id: doc.collect_id,
+        group_id: groupId,
+        currentGroupId: activeGroupId,
+        page,
+        page_size: pageSize,
+        type: 'doc',
+      },
+    });
+  };
+
   // 移动分组的下拉菜单
   const getMoveMenuItems = (doc: CollectDocItem) => {
-    const otherGroups = (groups || []).filter((g: CollectGroup) => g.id !== doc.group_id);
+    const otherGroups = (groups || []).filter(
+      (g: CollectGroup) => g.id !== doc.group_id,
+    );
     return [
       {
         key: '0',
         label: '移至未分组',
-        onClick: () => onMoveGroup(doc, 0),
+        onClick: () => handleMoveGroup(doc, 0),
       },
       ...otherGroups.map((g: CollectGroup) => ({
         key: String(g.id),
         label: g.name,
-        onClick: () => onMoveGroup(doc, g.id),
+        onClick: () => handleMoveGroup(doc, g.id),
       })),
     ];
   };
+
+  const showMove = activeGroupId !== -1;
 
   return (
     <Card
@@ -90,7 +169,7 @@ const CollectDocList: React.FC<CollectDocListProps> = ({
                   type="text"
                   size="small"
                   icon={<EyeOutlined />}
-                  onClick={() => onView(doc)}
+                  onClick={() => handleView(doc)}
                 >
                   查看
                 </Button>
@@ -114,7 +193,7 @@ const CollectDocList: React.FC<CollectDocListProps> = ({
               <Popconfirm
                 key="cancel"
                 title="确定取消收藏该文档？"
-                onConfirm={() => onCancelCollect(doc)}
+                onConfirm={() => handleCancelCollect(doc)}
                 okText="确定"
                 cancelText="取消"
               >
@@ -137,7 +216,7 @@ const CollectDocList: React.FC<CollectDocListProps> = ({
               title={
                 <Space size={8} wrap>
                   <a
-                    onClick={() => onView(doc)}
+                    onClick={() => handleView(doc)}
                     className="collect-item-title"
                   >
                     {doc.name}
@@ -167,7 +246,7 @@ const CollectDocList: React.FC<CollectDocListProps> = ({
             current={page}
             pageSize={pageSize}
             total={total}
-            onChange={onPageChange}
+            onChange={handlePageChange}
             showSizeChanger={false}
             showQuickJumper
             showTotal={(t) => `共 ${t} 条`}

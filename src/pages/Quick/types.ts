@@ -38,25 +38,6 @@ export interface QuickCategory {
   items: QuickItem[];
 }
 
-/** QuickFilter 组件 Props */
-export interface QuickFilterProps {
-  loading: boolean;
-  totalCount: number;
-  // 分组相关
-  groups: QuickGroup[];
-  selectedGroupId: number | 'all';
-  onGroupChange: (groupId: number | 'all') => void;
-  onOpenGroupManager: () => void;
-}
-
-/** QuickGrid 组件 Props */
-export interface QuickGridProps {
-  items: QuickItem[];
-  loading: boolean;
-  onItemClick: (item: QuickItem) => void;
-  onAddToGroup?: (item: QuickItem) => void;
-}
-
 /** 快捷操作分组 */
 export interface QuickGroup {
   id: number;
@@ -68,16 +49,23 @@ export interface QuickGroup {
   item_count: number;
 }
 
+/** QuickFilter 组件 Props */
+export interface QuickFilterProps {
+  selectedGroupId: number | 'all';
+  onGroupChange: (groupId: number | 'all') => void;
+  onOpenGroupManager: () => void;
+}
+
+/** QuickGrid 组件 Props */
+export interface QuickGridProps {
+  selectedGroupId: number | 'all';
+}
+
 /** QuickGroupManager 组件 Props */
 export interface QuickGroupManagerProps {
   open: boolean;
-  groups: QuickGroup[];
-  loading: boolean;
-  submitting: boolean;
   onClose: () => void;
-  onCreate: (name: string) => void;
-  onRename: (id: number, name: string) => void;
-  onDelete: (id: number) => void;
+  onDeleteGroup?: (id: number) => void;
 }
 
 /** QuickGroupPanel 组件 Props */

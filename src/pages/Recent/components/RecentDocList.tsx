@@ -21,7 +21,7 @@ import { history, useDispatch } from '@umijs/max';
 import { useShallowSelector } from '@/hooks';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { RecentDocItem, RecentTabType, TimeFilterType } from '../types';
 
 dayjs.extend(relativeTime);
@@ -61,19 +61,32 @@ const RecentDocList: React.FC<RecentDocListProps> = ({
   const currentUserId = currentUser?.id || 1;
 
   // ==================== 数据加载 ====================
+  // Tab → action type 映射表
+  const tabActionMap: Record<RecentTabType, string> = {
+    created: 'recent/fetchRecentCreated',
+    updated: 'recent/fetchRecentUpdated',
+    browsed: 'recent/fetchRecentBrowsed',
+  };
+
   const fetchData = useCallback(
     (tab: RecentTabType, page: number) => {
-      const params = { page, page_size: pageSize };
-      if (tab === 'created') {
-        dispatch({ type: 'recent/fetchRecentCreated', payload: params });
-      } else if (tab === 'updated') {
-        dispatch({ type: 'recent/fetchRecentUpdated', payload: params });
-      } else {
-        dispatch({ type: 'recent/fetchRecentBrowsed', payload: params });
-      }
+      dispatch({
+        type: tabActionMap[tab],
+        payload: { page, page_size: pageSize },
+      });
     },
     [dispatch, pageSize],
   );
+
+  // Tab 切换时加载对应数据（首次由 clientLoader 预加载，跳过）
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      return;
+    }
+    fetchData(activeTab, 1);
+  }, [activeTab, fetchData]);
 
   // ==================== 时间筛选（前端过滤） ====================
   const filterByTime = useCallback(

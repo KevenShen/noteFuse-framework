@@ -1,5 +1,5 @@
 // src/pages/Tags/components/TagCategoryManager.tsx
-// 标签页面 - 标签分类管理器弹窗（支持三级分类的增删改）
+// 标签页面 - 标签分类管理器弹窗（组件自治：直接从 Dva model 取数 + 分类增删改）
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -11,6 +11,7 @@ import {
   RightOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Button,
   Empty,
@@ -24,20 +25,28 @@ import {
   Tooltip,
   message,
 } from 'antd';
+import { useDispatch } from '@umijs/max';
 import React, { useState } from 'react';
-import type { TagCategory, TagCategoryManagerProps } from '../types';
+import type { TagCategory } from '../types';
+
+interface TagCategoryManagerProps {
+  open: boolean;
+  onClose: () => void;
+}
 
 const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
   open,
-  categories,
-  loading,
-  submitting,
   onClose,
-  onCreate,
-  onRename,
-  onDelete,
-  onMove,
 }) => {
+  const dispatch = useDispatch();
+
+  // 直接从 Dva model 取数
+  const {
+    tagCategories: categories,
+    tagCategoriesLoading: loading,
+    tagCategorySubmitting: submitting,
+  } = useShallowSelector((state: any) => state.tag);
+
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newParentId, setNewParentId] = useState<number>(0);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -59,14 +68,11 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
   }, [open, categories]);
 
   // ==================== 可作为父分类的选项（最多二级，因为新建后最多三级） ====================
-  // 直接计算，不使用 useMemo，确保 categories 更新后立即生效
   const getParentOptions = () => {
     const options = [{ label: '作为一级分类', value: 0 }];
-    // 一级分类可作为父分类
     const level1 = categories.filter((c) => c.parent_id === 0);
     level1.forEach((c) => {
       options.push({ label: c.name, value: c.id });
-      // 二级分类也可作为父分类（新建后为三级）
       const children = categories.filter((child) => child.parent_id === c.id);
       children.forEach((child) => {
         options.push({ label: `　└ ${child.name}`, value: child.id });
@@ -83,14 +89,12 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
       .sort((a, b) => a.sort - b.sort);
     level1.forEach((l1) => {
       result.push(l1);
-      // 如果一级分类被折叠，跳过其子分类
       if (collapsedIds.has(l1.id)) return;
       const level2 = categories
         .filter((c) => c.parent_id === l1.id)
         .sort((a, b) => a.sort - b.sort);
       level2.forEach((l2) => {
         result.push(l2);
-        // 如果二级分类被折叠，跳过其三级子分类
         if (collapsedIds.has(l2.id)) return;
         const level3 = categories
           .filter((c) => c.parent_id === l2.id)
@@ -134,14 +138,17 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
     return !hasChildren && !hasTags;
   };
 
-  // ==================== 事件处理 ====================
+  // ==================== 事件处理（直接 dispatch） ====================
 
   const handleCreate = () => {
     if (!newCategoryName.trim()) {
       message.warning('请输入分类名称');
       return;
     }
-    onCreate(newCategoryName.trim(), newParentId);
+    dispatch({
+      type: 'tag/createTagCategory',
+      payload: { name: newCategoryName.trim(), parent_id: newParentId, type: 'doc' },
+    });
     setNewCategoryName('');
     setNewParentId(0);
   };
@@ -157,10 +164,21 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
       return;
     }
     if (editingId !== null) {
-      onRename(editingId, editingName.trim());
+      dispatch({
+        type: 'tag/updateTagCategory',
+        payload: { id: editingId, name: editingName.trim() },
+      });
     }
     setEditingId(null);
     setEditingName('');
+  };
+
+  const handleDelete = (id: number) => {
+    dispatch({ type: 'tag/deleteTagCategory', payload: { id } });
+  };
+
+  const handleMove = (id: number, direction: 'up' | 'down') => {
+    dispatch({ type: 'tag/moveTagCategory', payload: { id, direction } });
   };
 
   // ==================== 渲染 ====================
@@ -234,7 +252,7 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
                         size="small"
                         icon={<ArrowUpOutlined />}
                         disabled={!canMoveUp}
-                        onClick={() => onMove(category.id, 'up')}
+                        onClick={() => handleMove(category.id, 'up')}
                       />
                     </Tooltip>
                     <Tooltip title="下移">
@@ -243,7 +261,7 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
                         size="small"
                         icon={<ArrowDownOutlined />}
                         disabled={!canMoveDown}
-                        onClick={() => onMove(category.id, 'down')}
+                        onClick={() => handleMove(category.id, 'down')}
                       />
                     </Tooltip>
                   </Space>
@@ -276,7 +294,7 @@ const TagCategoryManager: React.FC<TagCategoryManagerProps> = ({
                       ? '删除后不可恢复'
                       : '该分类下有子分类或标签，无法删除'
                   }
-                  onConfirm={() => deletable && onDelete(category.id)}
+                  onConfirm={() => deletable && handleDelete(category.id)}
                   okText="删除"
                   cancelText="取消"
                   disabled={!deletable}

@@ -40,39 +40,16 @@ export interface TagDocItem {
 
 /** TagCategoryPanel 组件 Props */
 export interface TagCategoryPanelProps {
-  categories: TagCategory[];
-  loading: boolean;
-  selectedTagId: number | null;
-  onSelectTag: (tagId: number | null) => void;
-  onOpenCategoryManager?: () => void;
-  onCreateTag?: (name: string, categoryId: number, color?: string) => void;
-  onUpdateTag?: (id: number, name: string, color?: string) => void;
-  onDeleteTag?: (id: number) => void;
-  tagSubmitting?: boolean;
+  onOpenCategoryManager: () => void;
 }
 
 /** TagCategoryManager 组件 Props */
 export interface TagCategoryManagerProps {
   open: boolean;
-  categories: TagCategory[];
-  loading: boolean;
-  submitting: boolean;
   onClose: () => void;
-  onCreate: (name: string, parent_id: number) => void;
-  onRename: (id: number, name: string) => void;
-  onDelete: (id: number) => void;
-  onMove: (id: number, direction: 'up' | 'down') => void;
 }
 
 /** TagDocList 组件 Props */
 export interface TagDocListProps {
-  list: TagDocItem[];
-  loading: boolean;
-  total: number;
-  page: number;
-  pageSize: number;
-  selectedTagName: string;
-  onPageChange: (page: number) => void;
-  onView: (doc: TagDocItem) => void;
-  onClearTag?: () => void;
+  // 无 props，完全自治，直接从 Dva model 取数
 }

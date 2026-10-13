@@ -1,10 +1,11 @@
 // src/pages/Tags/components/TagDocList.tsx
-// 标签页面 - 右侧标签下的文档列表（含翻页）
+// 标签页面 - 右侧标签下的文档列表（组件自治：直接从 Dva model 取数 + 翻页 + 查看 + 清除标签）
 import {
   CloseOutlined,
   EyeOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Avatar,
   Button,
@@ -17,23 +18,63 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { history, useDispatch } from '@umijs/max';
 import dayjs from 'dayjs';
-import React from 'react';
-import type { TagDocListProps } from '../types';
+import React, { useCallback, useMemo } from 'react';
+import type { TagDocItem, TagItem } from '../types';
 
 const { Text } = Typography;
 
-const TagDocList: React.FC<TagDocListProps> = ({
-  list,
-  loading,
-  total,
-  page,
-  pageSize,
-  selectedTagName,
-  onPageChange,
-  onView,
-  onClearTag,
-}) => {
+const TagDocList: React.FC = () => {
+  const dispatch = useDispatch();
+
+  // 直接从 Dva model 取数
+  const {
+    tagDocList: list,
+    tagDocLoading: loading,
+    tagDocTotal: total,
+    tagDocPage: page,
+    selectedTagId,
+    tagCategories,
+  } = useShallowSelector((state: any) => state.tag);
+
+  // 当前选中标签名称
+  const selectedTagName = useMemo(() => {
+    if (!selectedTagId) return '';
+    for (const category of tagCategories) {
+      const tag = category.tags?.find((t: TagItem) => t.id === selectedTagId);
+      if (tag) return tag.name;
+    }
+    return '';
+  }, [selectedTagId, tagCategories]);
+
+  // 翻页
+  const handlePageChange = useCallback(
+    (pageNum: number) => {
+      if (selectedTagId) {
+        dispatch({
+          type: 'tag/fetchTagDocs',
+          payload: { id: selectedTagId, page: pageNum, page_size: 10 },
+        });
+      }
+    },
+    [dispatch, selectedTagId],
+  );
+
+  // 查看文档
+  const handleView = useCallback((doc: TagDocItem) => {
+    history.push(`/doc/${doc.id}?project_id=${doc.project_id}`);
+  }, []);
+
+  // 清除选中标签
+  const handleClearTag = useCallback(() => {
+    dispatch({ type: 'tag/setSelectedTag', payload: null });
+    dispatch({
+      type: 'tag/saveTagDocList',
+      payload: { list: [], total: 0, page: 1 },
+    });
+  }, [dispatch]);
+
   return (
     <Card
       size="small"
@@ -41,16 +82,14 @@ const TagDocList: React.FC<TagDocListProps> = ({
       title={
         <Space size={8}>
           <FileTextOutlined className="tags-icon-blue" />
-          <span>
-            {selectedTagName ? '标签文档列表' : '标签文档列表'}
-          </span>
+          <span>标签文档列表</span>
           {selectedTagName && (
             <Tag
               color="blue"
               closable
               onClose={(e) => {
                 e.preventDefault();
-                onClearTag?.();
+                handleClearTag();
               }}
               closeIcon={<CloseOutlined style={{ fontSize: 10 }} />}
             >
@@ -73,7 +112,7 @@ const TagDocList: React.FC<TagDocListProps> = ({
             />
           ),
         }}
-        renderItem={(doc) => (
+        renderItem={(doc: TagDocItem) => (
           <List.Item
             className="tag-doc-item"
             actions={[
@@ -82,7 +121,7 @@ const TagDocList: React.FC<TagDocListProps> = ({
                   type="text"
                   size="small"
                   icon={<EyeOutlined />}
-                  onClick={() => onView(doc)}
+                  onClick={() => handleView(doc)}
                 >
                   查看
                 </Button>
@@ -100,7 +139,7 @@ const TagDocList: React.FC<TagDocListProps> = ({
               title={
                 <Space size={8} wrap>
                   <a
-                    onClick={() => onView(doc)}
+                    onClick={() => handleView(doc)}
                     className="tags-item-title"
                   >
                     {doc.name}
@@ -135,9 +174,9 @@ const TagDocList: React.FC<TagDocListProps> = ({
         <div className="tags-pagination">
           <Pagination
             current={page}
-            pageSize={pageSize}
+            pageSize={10}
             total={total}
-            onChange={onPageChange}
+            onChange={handlePageChange}
             showSizeChanger={false}
             showQuickJumper
             showTotal={(t) => `共 ${t} 条`}

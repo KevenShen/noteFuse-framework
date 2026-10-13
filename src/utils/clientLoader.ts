@@ -25,9 +25,7 @@ export const extractResponseData = <T>(res: any, defaultValue: T): T => {
  * @returns 列表数据数组
  */
 export const extractListData = <T>(res: any): T[] => {
-  const data = extractResponseData<any>(res, {});
-  if (Array.isArray(data)) return data;
-  return data.list || [];
+  return extractListWithPagination<T>(res).list;
 };
 
 /**
@@ -37,8 +35,31 @@ export const extractListData = <T>(res: any): T[] => {
  * @returns 分页信息 { total, page }
  */
 export const extractPaginationData = (res: any): { total: number; page: number } => {
+  const { total, page } = extractListWithPagination(res);
+  return { total, page };
+};
+
+/**
+ * 从列表响应中一次性提取列表数据和分页信息
+ * 兼容 { list: [], total: 0, page: 1 } 和直接数组两种结构
+ *
+ * @param res - API 响应对象
+ * @returns 列表数据和分页信息 { list, total, page }
+ *
+ * @example
+ * const { list, total, page } = extractListWithPagination<ProjectItem>(res);
+ */
+export const extractListWithPagination = <T>(res: any): {
+  list: T[];
+  total: number;
+  page: number;
+} => {
   const data = extractResponseData<any>(res, {});
+  if (Array.isArray(data)) {
+    return { list: data, total: data.length, page: 1 };
+  }
   return {
+    list: data.list || [],
     total: data.total || 0,
     page: data.page || 1,
   };

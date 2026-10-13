@@ -1,5 +1,5 @@
 // src/pages/Tags/components/TagCategoryPanel.tsx
-// 标签页面 - 左侧标签分类面板（Dropdown 三级分类 + 标签增删改）
+// 标签页面 - 左侧标签分类面板（组件自治：直接从 Dva model 取数 + 标签增删改 + 选择标签）
 import {
   CloseOutlined,
   DeleteOutlined,
@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Button,
   Card,
@@ -21,8 +22,9 @@ import {
   Tooltip,
   message,
 } from 'antd';
-import React, { useState } from 'react';
-import type { TagCategory, TagCategoryPanelProps, TagItem } from '../types';
+import { useDispatch } from '@umijs/max';
+import React, { useCallback, useState } from 'react';
+import type { TagCategory, TagItem } from '../types';
 
 // ==================== 标签颜色选项 ====================
 const TAG_COLORS = [
@@ -41,17 +43,23 @@ const getColorHex = (colorName: string): string => {
   return TAG_COLORS.find((c) => c.name === colorName)?.hex || '#8c8c8c';
 };
 
+interface TagCategoryPanelProps {
+  onOpenCategoryManager: () => void;
+}
+
 const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
-  categories,
-  loading,
-  selectedTagId,
-  onSelectTag,
   onOpenCategoryManager,
-  onCreateTag,
-  onUpdateTag,
-  onDeleteTag,
-  tagSubmitting,
 }) => {
+  const dispatch = useDispatch();
+
+  // 直接从 Dva model 取数
+  const {
+    tagCategories: categories,
+    tagCategoriesLoading: loading,
+    tagSubmitting,
+    selectedTagId,
+  } = useShallowSelector((state: any) => state.tag);
+
   // 当前选中的分类 ID（0 表示全部分类）
   const [selectedCategoryId, setSelectedCategoryId] = useState<number>(0);
 
@@ -65,7 +73,7 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
   const [editingTagName, setEditingTagName] = useState('');
   const [editingTagColor, setEditingTagColor] = useState('blue');
 
-  // ==================== 递归构建三级分类菜单（参照 Project 分类选择） ====================
+  // ==================== 递归构建三级分类菜单 ====================
   const buildCategoryMenu = (): MenuProps['items'] => {
     const items: MenuProps['items'] = [
       { key: '0', label: '全部分类' },
@@ -131,7 +139,7 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
       .flatMap((c) => c.tags || []);
   })();
 
-  // ==================== 标签增删改 ====================
+  // ==================== 标签增删改（直接 dispatch） ====================
 
   // 获取当前最底层分类 ID（用于新建标签）
   const getLeafCategoryId = (): number | null => {
@@ -150,7 +158,15 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
       message.warning('请输入标签名称');
       return;
     }
-    onCreateTag?.(newTagName.trim(), leafCategoryId, newTagColor);
+    dispatch({
+      type: 'tag/createTag',
+      payload: {
+        name: newTagName.trim(),
+        category_id: leafCategoryId,
+        color: newTagColor,
+        type: 'doc',
+      },
+    });
     setNewTagName('');
     setNewTagColor('blue');
     setShowAddTag(false);
@@ -168,12 +184,49 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
       return;
     }
     if (editingTagId !== null) {
-      onUpdateTag?.(editingTagId, editingTagName.trim(), editingTagColor);
+      dispatch({
+        type: 'tag/updateTag',
+        payload: { id: editingTagId, name: editingTagName.trim(), color: editingTagColor },
+      });
     }
     setEditingTagId(null);
     setEditingTagName('');
     setEditingTagColor('blue');
   };
+
+  // 选择标签（获取文档列表）
+  const handleSelectTag = useCallback(
+    (tagId: number | null) => {
+      if (tagId) {
+        dispatch({
+          type: 'tag/fetchTagDocs',
+          payload: { id: tagId, page: 1, page_size: 10 },
+        });
+      } else {
+        dispatch({ type: 'tag/setSelectedTag', payload: null });
+        dispatch({
+          type: 'tag/saveTagDocList',
+          payload: { list: [], total: 0, page: 1 },
+        });
+      }
+    },
+    [dispatch],
+  );
+
+  // 删除标签（如果删除的是当前选中的标签，先取消选中）
+  const handleDeleteTag = useCallback(
+    (id: number) => {
+      if (selectedTagId === id) {
+        dispatch({ type: 'tag/setSelectedTag', payload: null });
+        dispatch({
+          type: 'tag/saveTagDocList',
+          payload: { list: [], total: 0, page: 1 },
+        });
+      }
+      dispatch({ type: 'tag/deleteTag', payload: { id } });
+    },
+    [dispatch, selectedTagId],
+  );
 
   // ==================== 渲染 ====================
   return (
@@ -311,7 +364,7 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
                   <Tooltip title={`${tag.usage_count} 篇文档`}>
                     <Tag.CheckableTag
                       checked={isChecked}
-                      onChange={() => onSelectTag(isChecked ? null : tag.id)}
+                      onChange={() => handleSelectTag(isChecked ? null : tag.id)}
                       className={`tag-checkable ${isChecked ? 'checked' : ''}`}
                       style={
                         isChecked
@@ -335,7 +388,7 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
                           className="tag-close-icon"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectTag(null);
+                            handleSelectTag(null);
                           }}
                         />
                       )}
@@ -355,7 +408,7 @@ const TagCategoryPanel: React.FC<TagCategoryPanelProps> = ({
                     <Popconfirm
                       title="确定删除该标签？"
                       description="删除后不可恢复"
-                      onConfirm={() => onDeleteTag?.(tag.id)}
+                      onConfirm={() => handleDeleteTag(tag.id)}
                       okText="删除"
                       cancelText="取消"
                     >

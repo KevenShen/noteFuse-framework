@@ -1,5 +1,5 @@
 // src/pages/Collect/components/CollectProjectList.tsx
-// 收藏页面 - 收藏文集列表（含翻页、取消收藏）
+// 收藏页面 - 收藏文集列表（组件自治：直接从 Dva model 取数 + 翻页 + 查看 + 取消收藏 + 移动分组）
 import {
   DeleteOutlined,
   EyeOutlined,
@@ -7,6 +7,7 @@ import {
   StarFilled,
   SwapOutlined,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Avatar,
   Button,
@@ -21,8 +22,10 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { history, useDispatch } from '@umijs/max';
 import dayjs from 'dayjs';
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
+import type { CollectGroup } from '../types';
 
 const { Text } = Typography;
 
@@ -44,50 +47,112 @@ export interface CollectProjectItem {
 }
 
 interface CollectProjectListProps {
-  list: CollectProjectItem[];
-  loading: boolean;
-  total: number;
-  page: number;
-  pageSize: number;
-  activeGroupName: string;
-  groups: any[];
-  onPageChange: (page: number) => void;
-  onView: (project: CollectProjectItem) => void;
-  onCancelCollect: (project: CollectProjectItem) => void;
-  onMoveGroup: (project: CollectProjectItem, groupId: number) => void;
-  showMove?: boolean; // 是否显示移动按钮（全部收藏时隐藏）
+  activeGroupId: number;
+  pageSize?: number;
 }
 
 const CollectProjectList: React.FC<CollectProjectListProps> = ({
-  list,
-  loading,
-  total,
-  page,
-  pageSize,
-  activeGroupName,
-  groups,
-  onPageChange,
-  onView,
-  onCancelCollect,
-  onMoveGroup,
-  showMove = true,
+  activeGroupId,
+  pageSize = 10,
 }) => {
+  const dispatch = useDispatch();
+
+  // 直接从 Dva model 取数
+  const {
+    collectList: list,
+    collectLoading: loading,
+    collectTotal: total,
+    collectPage: page,
+    collectGroups: groups,
+  } = useShallowSelector((state: any) => state.collect);
+
+  // 当前分组名称
+  const activeGroupName = useMemo(() => {
+    if (activeGroupId === -1) return '全部收藏';
+    if (activeGroupId === 0) return '未分组';
+    const group = (groups || []).find(
+      (g: CollectGroup) => g.id === activeGroupId,
+    );
+    return group?.name || '未知分组';
+  }, [activeGroupId, groups]);
+
+  // ==================== 数据加载 ====================
+  const fetchList = useCallback(
+    (pageNum: number) => {
+      dispatch({
+        type: 'collect/fetchCollectList',
+        payload: {
+          page: pageNum,
+          page_size: pageSize,
+          group_id: activeGroupId,
+          type: 'project',
+        },
+      });
+    },
+    [dispatch, pageSize, activeGroupId],
+  );
+
+  // ==================== 事件处理 ====================
+
+  // 翻页
+  const handlePageChange = (pageNum: number) => {
+    fetchList(pageNum);
+  };
+
+  // 查看文集
+  const handleView = (project: CollectProjectItem) => {
+    history.push(`/projectDetail/${project.id}`);
+  };
+
+  // 取消收藏
+  const handleCancelCollect = (project: CollectProjectItem) => {
+    dispatch({
+      type: 'collect/cancelCollect',
+      payload: {
+        id: project.collect_id,
+        group_id: activeGroupId,
+        page,
+        page_size: pageSize,
+        type: 'project',
+      },
+    });
+  };
+
+  // 移动分组
+  const handleMoveGroup = (project: CollectProjectItem, groupId: number) => {
+    dispatch({
+      type: 'collect/moveCollect',
+      payload: {
+        id: project.collect_id,
+        group_id: groupId,
+        currentGroupId: activeGroupId,
+        page,
+        page_size: pageSize,
+        type: 'project',
+      },
+    });
+  };
+
   // 移动分组的下拉菜单
   const getMoveMenuItems = (project: CollectProjectItem) => {
-    const otherGroups = (groups || []).filter((g: any) => g.id !== project.group_id);
+    const otherGroups = (groups || []).filter(
+      (g: CollectGroup) => g.id !== project.group_id,
+    );
     return [
       {
         key: '0',
         label: '移至未分组',
-        onClick: () => onMoveGroup(project, 0),
+        onClick: () => handleMoveGroup(project, 0),
       },
-      ...otherGroups.map((g: any) => ({
+      ...otherGroups.map((g: CollectGroup) => ({
         key: String(g.id),
         label: g.name,
-        onClick: () => onMoveGroup(project, g.id),
+        onClick: () => handleMoveGroup(project, g.id),
       })),
     ];
   };
+
+  const showMove = activeGroupId !== -1;
 
   return (
     <Card
@@ -122,7 +187,7 @@ const CollectProjectList: React.FC<CollectProjectListProps> = ({
                   type="text"
                   size="small"
                   icon={<EyeOutlined />}
-                  onClick={() => onView(project)}
+                  onClick={() => handleView(project)}
                 >
                   查看
                 </Button>
@@ -146,7 +211,7 @@ const CollectProjectList: React.FC<CollectProjectListProps> = ({
               <Popconfirm
                 key="cancel"
                 title="确定取消收藏该文集？"
-                onConfirm={() => onCancelCollect(project)}
+                onConfirm={() => handleCancelCollect(project)}
                 okText="确定"
                 cancelText="取消"
               >
@@ -169,7 +234,7 @@ const CollectProjectList: React.FC<CollectProjectListProps> = ({
               title={
                 <Space size={8} wrap>
                   <a
-                    onClick={() => onView(project)}
+                    onClick={() => handleView(project)}
                     className="collect-item-title"
                   >
                     {project.name}
@@ -201,7 +266,7 @@ const CollectProjectList: React.FC<CollectProjectListProps> = ({
             current={page}
             pageSize={pageSize}
             total={total}
-            onChange={onPageChange}
+            onChange={handlePageChange}
             showSizeChanger={false}
             showQuickJumper
             showTotal={(t) => `共 ${t} 条`}

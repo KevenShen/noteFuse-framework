@@ -1,11 +1,12 @@
 // src/pages/Collect/components/GroupManagerModal.tsx
-// 收藏页面 - 分组管理弹窗（增删改）
+// 收藏页面 - 分组管理弹窗（组件自治：直接从 Dva model 取数 + 增删改）
 import {
   DeleteOutlined,
   EditOutlined,
   FolderOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import {
   Button,
   Empty,
@@ -17,22 +18,33 @@ import {
   Space,
   Tag,
   Tooltip,
-  message,
 } from 'antd';
+import { useDispatch } from '@umijs/max';
 import React, { useEffect, useState } from 'react';
-import type { CollectGroup, GroupManagerModalProps } from '../types';
+import type { CollectGroup } from '../types';
+
+interface GroupManagerModalProps {
+  visible: boolean;
+  activeTab: 'project' | 'doc';
+  onClose: () => void;
+  onDeleteGroup?: (id: number) => void; // 删除分组后的回调（如重置选中分组）
+}
 
 const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
   visible,
-  groups,
+  activeTab,
   onClose,
-  onCreate,
-  onUpdate,
-  onDelete,
+  onDeleteGroup,
 }) => {
+  const dispatch = useDispatch();
   const [form] = Form.useForm();
   const [editingGroup, setEditingGroup] = useState<CollectGroup | null>(null);
   const [showForm, setShowForm] = useState(false);
+
+  // 直接从 Dva model 取数
+  const { collectGroups: groups } = useShallowSelector(
+    (state: any) => state.collect,
+  );
 
   // 弹窗关闭时重置
   useEffect(() => {
@@ -65,9 +77,15 @@ const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
     try {
       const values = await form.validateFields();
       if (editingGroup) {
-        onUpdate(editingGroup.id, values);
+        dispatch({
+          type: 'collect/updateCollectGroup',
+          payload: { id: editingGroup.id, ...values },
+        });
       } else {
-        onCreate(values);
+        dispatch({
+          type: 'collect/createCollectGroup',
+          payload: { ...values, type: activeTab },
+        });
       }
       setShowForm(false);
       setEditingGroup(null);
@@ -82,6 +100,15 @@ const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
     setShowForm(false);
     setEditingGroup(null);
     form.resetFields();
+  };
+
+  // 删除分组
+  const handleDelete = (id: number) => {
+    dispatch({
+      type: 'collect/deleteCollectGroup',
+      payload: { id },
+    });
+    onDeleteGroup?.(id);
   };
 
   return (
@@ -173,7 +200,7 @@ const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
                 <Popconfirm
                   title="确定删除该分组？"
                   description="删除后不可恢复"
-                  onConfirm={() => onDelete(group.id)}
+                  onConfirm={() => handleDelete(group.id)}
                   okText="确定"
                   cancelText="取消"
                   disabled={(group.count || 0) > 0}

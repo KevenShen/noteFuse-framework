@@ -1,5 +1,5 @@
 // src/pages/Collect/components/CollectSidebar.tsx
-// 收藏页面 - 左侧分组侧边栏
+// 收藏页面 - 左侧分组侧边栏（组件自治：直接从 Dva model 取数）
 import {
   AppstoreOutlined,
   FolderOutlined,
@@ -7,19 +7,30 @@ import {
   SettingOutlined,
   StarOutlined,
 } from '@ant-design/icons';
+import { useShallowSelector } from '@/hooks';
 import { Badge, Button, Card, List, Space, Tooltip } from 'antd';
 import React from 'react';
-import type { CollectSidebarProps } from '../types';
+import type { CollectGroup } from '../types';
+
+interface CollectSidebarProps {
+  activeGroupId: number; // -1 全部，0 未分组，其他指定分组
+  onSelectGroup: (groupId: number) => void;
+  onOpenGroupManager: () => void;
+}
 
 const CollectSidebar: React.FC<CollectSidebarProps> = ({
-  groups,
-  loading,
   activeGroupId,
-  totalCount,
-  ungroupedCount,
   onSelectGroup,
   onOpenGroupManager,
 }) => {
+  // 直接从 Dva model 取数
+  const {
+    collectGroups: groups,
+    collectGroupLoading: loading,
+    collectUngroupedCount: ungroupedCount,
+    collectTotalCount: totalCount,
+  } = useShallowSelector((state: any) => state.collect);
+
   // 快捷分组项（全部 + 未分组）
   const quickItems = [
     {
@@ -63,7 +74,7 @@ const CollectSidebar: React.FC<CollectSidebarProps> = ({
         loading={loading}
         dataSource={[
           ...quickItems,
-          ...groups.map((g) => ({
+          ...groups.map((g: CollectGroup) => ({
             key: g.id,
             name: g.name,
             icon: <FolderOutlined />,

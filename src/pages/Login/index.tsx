@@ -53,9 +53,6 @@ const LoginPage: React.FC = () => {
           }}
           rules={[{ required: true, message: '请输入密码!' }]}
         />
-        <div className={styles.tips}>
-          <span>测试账号：admin / admin123</span>
-        </div>
       </LoginFormPage>
     </div>
   );

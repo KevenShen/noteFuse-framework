@@ -30,39 +30,32 @@ export interface CollectDocItem {
   collect_time: number;
 }
 
+/** CollectTab 类型 */
+export type CollectTabType = 'project' | 'doc';
+
 /** CollectSidebar 组件 Props */
 export interface CollectSidebarProps {
-  groups: CollectGroup[];
-  loading: boolean;
   activeGroupId: number; // -1 全部，0 未分组，其他指定分组
-  totalCount: number;
-  ungroupedCount: number;
   onSelectGroup: (groupId: number) => void;
   onOpenGroupManager: () => void;
 }
 
 /** CollectDocList 组件 Props */
 export interface CollectDocListProps {
-  list: CollectDocItem[];
-  loading: boolean;
-  total: number;
-  page: number;
-  pageSize: number;
-  activeGroupName: string;
-  groups: CollectGroup[];
-  onPageChange: (page: number) => void;
-  onView: (doc: CollectDocItem) => void;
-  onCancelCollect: (doc: CollectDocItem) => void;
-  onMoveGroup: (doc: CollectDocItem, groupId: number) => void;
-  showMove?: boolean; // 是否显示移动按钮（全部收藏时隐藏）
+  activeGroupId: number;
+  pageSize?: number;
+}
+
+/** CollectProjectList 组件 Props */
+export interface CollectProjectListProps {
+  activeGroupId: number;
+  pageSize?: number;
 }
 
 /** GroupManagerModal 组件 Props */
 export interface GroupManagerModalProps {
   visible: boolean;
-  groups: CollectGroup[];
+  activeTab: CollectTabType;
   onClose: () => void;
-  onCreate: (data: { name: string; description: string }) => void;
-  onUpdate: (id: number, data: { name: string; description: string }) => void;
-  onDelete: (id: number) => void;
+  onDeleteGroup?: (id: number) => void;
 }

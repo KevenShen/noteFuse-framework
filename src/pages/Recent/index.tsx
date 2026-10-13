@@ -4,8 +4,11 @@
 // index.tsx 仅负责：clientLoader 预加载、数据同步到 model、Tab/时间筛选状态、页面布局
 // 数据获取、时间筛选、翻页、查看/编辑等逻辑已下沉到 RecentDocList 组件自治
 import { fetchRecentBrowsed } from '@/services';
-import { useClientLoaderData, useDispatch } from '@umijs/max';
-import React, { useEffect, useState } from 'react';
+import { useClientLoaderSync } from '@/hooks';
+import { extractListWithPagination } from '@/utils/clientLoader';
+import { useClientLoaderData } from '@umijs/max';
+import { useSetState } from 'ahooks';
+import React from 'react';
 import { RecentDocList, RecentFilter } from './components';
 import './index.less';
 import type { RecentTabType, TimeFilterType } from './types';
@@ -15,11 +18,11 @@ import type { RecentTabType, TimeFilterType } from './types';
 export async function clientLoader() {
   try {
     const res = await fetchRecentBrowsed({ page: 1, page_size: 10 });
-    const data: any = res?.data ?? res ?? {};
+    const { list, total, page } = extractListWithPagination<any>(res);
     return {
-      recentBrowsedList: data.list || [],
-      recentBrowsedTotal: data.total || 0,
-      recentBrowsedPage: data.page || 1,
+      recentBrowsedList: list,
+      recentBrowsedTotal: total,
+      recentBrowsedPage: page,
     };
   } catch (e) {
     return {
@@ -31,8 +34,6 @@ export async function clientLoader() {
 }
 
 const RecentPage: React.FC = () => {
-  const dispatch = useDispatch();
-
   // useClientLoaderData 返回 { data: clientLoader返回值 }
   const { data: clientLoaderData } = useClientLoaderData() as {
     data: {
@@ -43,52 +44,33 @@ const RecentPage: React.FC = () => {
   };
 
   // ==================== 页面状态 ====================
-  const [activeTab, setActiveTab] = useState<RecentTabType>('browsed');
-  const [timeFilter, setTimeFilter] = useState<TimeFilterType>('all');
+  const [state, setState] = useSetState({
+    activeTab: 'browsed' as RecentTabType,
+    timeFilter: 'all' as TimeFilterType,
+  });
+  const { activeTab, timeFilter } = state;
 
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
-  // 用 useRef 标记，避免重复 dispatch
-  const syncedRef = React.useRef(false);
-  useEffect(() => {
-    if (syncedRef.current) return;
-    if (clientLoaderData?.recentBrowsedList?.length) {
-      dispatch({
-        type: 'recent/saveRecentBrowsed',
-        payload: {
-          list: clientLoaderData.recentBrowsedList,
-          total: clientLoaderData.recentBrowsedTotal,
-          page: clientLoaderData.recentBrowsedPage,
-        },
-      });
-      syncedRef.current = true;
-    }
-  }, [clientLoaderData, dispatch]);
-
-  // Tab 切换时加载对应数据（初始 tab 数据由 clientLoader 预加载）
-  const initializedRef = React.useRef(false);
-  useEffect(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      return; // 初始加载由 clientLoader 完成
-    }
-    const params = { page: 1, page_size: 10 };
-    if (activeTab === 'created') {
-      dispatch({ type: 'recent/fetchRecentCreated', payload: params });
-    } else if (activeTab === 'updated') {
-      dispatch({ type: 'recent/fetchRecentUpdated', payload: params });
-    } else {
-      dispatch({ type: 'recent/fetchRecentBrowsed', payload: params });
-    }
-  }, [activeTab, dispatch]);
+  // 只同步一次，避免后续交互更新被覆盖
+  useClientLoaderSync({
+    clientLoaderData,
+    actionType: 'recent/saveRecentBrowsed',
+    mapData: (data) => ({
+      list: data.recentBrowsedList,
+      total: data.recentBrowsedTotal,
+      page: data.recentBrowsedPage,
+    }),
+    hasData: (data) => data?.recentBrowsedList?.length > 0,
+  });
 
   // ==================== 页面布局 ====================
   return (
     <div className="recent-page">
       <RecentFilter
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => setState({ activeTab: tab })}
         timeFilter={timeFilter}
-        onTimeFilterChange={setTimeFilter}
+        onTimeFilterChange={(filter) => setState({ timeFilter: filter })}
       />
       <RecentDocList activeTab={activeTab} timeFilter={timeFilter} />
     </div>
