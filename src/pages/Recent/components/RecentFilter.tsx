@@ -1,5 +1,5 @@
 // src/pages/Recent/components/RecentFilter.tsx
-// 最近使用页面 - 顶部筛选栏（Tab切换 + 时间筛选）
+// 最近使用页面 - 顶部筛选栏（Tab切换 + 时间筛选，组件自治：直接从 Dva model 取 counts）
 import {
   ClockCircleOutlined,
   DownOutlined,
@@ -9,20 +9,36 @@ import {
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Space, Tabs, Tag } from 'antd';
-import React from 'react';
-import type {
-  RecentFilterProps,
-  RecentTabType,
-  TimeFilterType,
-} from '../types';
+import { useShallowSelector } from '@/hooks';
+import React, { useMemo } from 'react';
+import type { RecentTabType, TimeFilterType } from '../types';
+
+interface RecentFilterProps {
+  activeTab: RecentTabType;
+  onTabChange: (tab: RecentTabType) => void;
+  timeFilter: TimeFilterType;
+  onTimeFilterChange: (filter: TimeFilterType) => void;
+}
 
 const RecentFilter: React.FC<RecentFilterProps> = ({
   activeTab,
   onTabChange,
   timeFilter,
   onTimeFilterChange,
-  counts,
 }) => {
+  // 直接从 Dva model 获取各 Tab 总数
+  const { recentCreatedTotal, recentUpdatedTotal, recentBrowsedTotal } =
+    useShallowSelector((state: any) => state.recent);
+
+  const counts = useMemo(
+    () => ({
+      created: recentCreatedTotal,
+      updated: recentUpdatedTotal,
+      browsed: recentBrowsedTotal,
+    }),
+    [recentCreatedTotal, recentUpdatedTotal, recentBrowsedTotal],
+  );
+
   const timeLabels: Record<TimeFilterType, string> = {
     all: '全部时间',
     today: '今天',

@@ -2,10 +2,15 @@
 // 最近使用模块 Dva Model
 // 配合 Immer：namespace + state + reducers + effects
 // 三个场景：最近创建 / 最近更新 / 最近浏览
-import { message } from 'antd';
 import * as recentService from '@/services/recent';
+import { message } from 'antd';
 
 export interface RecentState {
+  // 最近浏览
+  recentBrowsedList: any[];
+  recentBrowsedTotal: number;
+  recentBrowsedPage: number;
+  recentBrowsedLoading: boolean;
   // 最近创建
   recentCreatedList: any[];
   recentCreatedTotal: number;
@@ -16,14 +21,13 @@ export interface RecentState {
   recentUpdatedTotal: number;
   recentUpdatedPage: number;
   recentUpdatedLoading: boolean;
-  // 最近浏览
-  recentBrowsedList: any[];
-  recentBrowsedTotal: number;
-  recentBrowsedPage: number;
-  recentBrowsedLoading: boolean;
 }
 
 const initialState: RecentState = {
+  recentBrowsedList: [],
+  recentBrowsedTotal: 0,
+  recentBrowsedPage: 1,
+  recentBrowsedLoading: false,
   recentCreatedList: [],
   recentCreatedTotal: 0,
   recentCreatedPage: 1,
@@ -32,10 +36,6 @@ const initialState: RecentState = {
   recentUpdatedTotal: 0,
   recentUpdatedPage: 1,
   recentUpdatedLoading: false,
-  recentBrowsedList: [],
-  recentBrowsedTotal: 0,
-  recentBrowsedPage: 1,
-  recentBrowsedLoading: false,
 };
 
 export default {
@@ -44,6 +44,21 @@ export default {
   state: initialState,
 
   reducers: {
+    // ==================== 最近浏览 ====================
+    saveRecentBrowsed(
+      state: RecentState,
+      { payload }: { payload: { list: any[]; total: number; page: number } },
+    ) {
+      state.recentBrowsedList = payload.list;
+      state.recentBrowsedTotal = payload.total;
+      state.recentBrowsedPage = payload.page;
+    },
+    setRecentBrowsedLoading(
+      state: RecentState,
+      { payload }: { payload: boolean },
+    ) {
+      state.recentBrowsedLoading = payload;
+    },
     // ==================== 最近创建 ====================
     saveRecentCreated(
       state: RecentState,
@@ -53,7 +68,10 @@ export default {
       state.recentCreatedTotal = payload.total;
       state.recentCreatedPage = payload.page;
     },
-    setRecentCreatedLoading(state: RecentState, { payload }: { payload: boolean }) {
+    setRecentCreatedLoading(
+      state: RecentState,
+      { payload }: { payload: boolean },
+    ) {
       state.recentCreatedLoading = payload;
     },
     // ==================== 最近更新 ====================
@@ -65,24 +83,33 @@ export default {
       state.recentUpdatedTotal = payload.total;
       state.recentUpdatedPage = payload.page;
     },
-    setRecentUpdatedLoading(state: RecentState, { payload }: { payload: boolean }) {
-      state.recentUpdatedLoading = payload;
-    },
-    // ==================== 最近浏览 ====================
-    saveRecentBrowsed(
+    setRecentUpdatedLoading(
       state: RecentState,
-      { payload }: { payload: { list: any[]; total: number; page: number } },
+      { payload }: { payload: boolean },
     ) {
-      state.recentBrowsedList = payload.list;
-      state.recentBrowsedTotal = payload.total;
-      state.recentBrowsedPage = payload.page;
-    },
-    setRecentBrowsedLoading(state: RecentState, { payload }: { payload: boolean }) {
-      state.recentBrowsedLoading = payload;
+      state.recentUpdatedLoading = payload;
     },
   },
 
   effects: {
+    // ==================== 最近浏览 ====================
+    *fetchRecentBrowsed(
+      { payload }: { payload?: { page?: number; page_size?: number } },
+      { call, put }: any,
+    ): Generator<any, any, any> {
+      yield put({ type: 'setRecentBrowsedLoading', payload: true });
+      try {
+        const res = yield call(recentService.fetchRecentBrowsed, payload);
+        yield put({ type: 'saveRecentBrowsed', payload: res.data });
+        return res.data;
+      } catch (e) {
+        message.error('获取最近浏览文档失败');
+        return null;
+      } finally {
+        yield put({ type: 'setRecentBrowsedLoading', payload: false });
+      }
+    },
+
     // ==================== 最近创建 ====================
     *fetchRecentCreated(
       { payload }: { payload?: { page?: number; page_size?: number } },
@@ -116,24 +143,6 @@ export default {
         return null;
       } finally {
         yield put({ type: 'setRecentUpdatedLoading', payload: false });
-      }
-    },
-
-    // ==================== 最近浏览 ====================
-    *fetchRecentBrowsed(
-      { payload }: { payload?: { page?: number; page_size?: number } },
-      { call, put }: any,
-    ): Generator<any, any, any> {
-      yield put({ type: 'setRecentBrowsedLoading', payload: true });
-      try {
-        const res = yield call(recentService.fetchRecentBrowsed, payload);
-        yield put({ type: 'saveRecentBrowsed', payload: res.data });
-        return res.data;
-      } catch (e) {
-        message.error('获取最近浏览文档失败');
-        return null;
-      } finally {
-        yield put({ type: 'setRecentBrowsedLoading', payload: false });
       }
     },
   },

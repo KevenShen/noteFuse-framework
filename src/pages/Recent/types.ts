@@ -31,23 +31,11 @@ export interface RecentFilterProps {
   onTabChange: (tab: RecentTabType) => void;
   timeFilter: TimeFilterType;
   onTimeFilterChange: (filter: TimeFilterType) => void;
-  counts: {
-    created: number;
-    updated: number;
-    browsed: number;
-  };
 }
 
 /** RecentDocList 组件 Props */
 export interface RecentDocListProps {
-  list: RecentDocItem[];
-  loading: boolean;
-  total: number;
-  page: number;
-  pageSize: number;
-  tabType: RecentTabType;
-  currentUserId: number;
-  onPageChange: (page: number) => void;
-  onView: (doc: RecentDocItem) => void;
-  onEdit: (doc: RecentDocItem) => void;
+  activeTab: RecentTabType;
+  timeFilter: TimeFilterType;
+  pageSize?: number;
 }
