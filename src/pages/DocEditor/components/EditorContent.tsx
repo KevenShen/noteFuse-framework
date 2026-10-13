@@ -6,7 +6,7 @@ import { useShallowSelector } from '@/hooks';
 import { UnorderedListOutlined, FileTextOutlined, ProfileOutlined } from '@ant-design/icons';
 import { useDispatch } from '@umijs/max';
 import { Button, Spin, Tag } from 'antd';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocItem } from '@/pages/Project/types';
 import type { DocVersion } from '@/components/DocTree/types';
 import DocTitle from './DocTitle';
@@ -14,66 +14,57 @@ import './EditorContent.less';
 
 interface EditorContentProps {
   doc: DocItem | null;
-  currentVersion: DocVersion | null;
+  docId: number;
+  versionId?: string;
   loading: boolean;
   mdxEditorRef: React.RefObject<MDXEditorRef>;
-  onContentChange: (content: string) => void;
-  /** 大纲内容变化回调 */
-  onOutlineContentChange?: (outline: string) => void;
-  onTitleChange?: (title: string) => void;
-  // ==================== 版本总览编辑模式 ====================
-  /** 版本总览内容变化回调 */
-  onVersionOverviewContentChange?: (content: string) => void;
-  // ==================== 版本对比编辑模式 ====================
-  /** 是否处于版本对比编辑模式 */
-  versionEditMode?: boolean;
-  /** 基底版本信息 */
-  baseVersion?: any;
-  /** 新版本信息 */
-  newVersionInfo?: any;
-  /** 新版本内容 */
-  newVersionContent?: string;
-  /** 新版本内容变化回调 */
-  onNewVersionContentChange?: (content: string) => void;
-  /** 保存新版本回调 */
-  onSaveNewVersion?: () => void;
-  /** 取消对比编辑模式回调 */
-  onCancelVersionEdit?: () => void;
 }
 
 const EditorContent: React.FC<EditorContentProps> = ({
   doc,
-  currentVersion,
+  docId,
+  versionId,
   loading,
   mdxEditorRef,
-  onContentChange,
-  onOutlineContentChange,
-  onTitleChange,
-  // 版本总览编辑模式
-  onVersionOverviewContentChange,
-  // 版本对比编辑模式
-  versionEditMode = false,
-  baseVersion,
-  newVersionInfo,
-  newVersionContent = '',
-  onNewVersionContentChange,
-  onSaveNewVersion,
-  onCancelVersionEdit,
 }) => {
   const dispatch = useDispatch();
 
-  // 自行从 docEditor model 获取编辑器模式状态
+  // 自行从 docEditor model 获取编辑器模式状态和版本对比编辑状态
   const {
     editorMode,
     outlineMode,
     versionOverviewMode,
     saving,
+    versionEditMode,
+    baseVersion,
+    newVersionInfo,
+    newVersionContent,
   } = useShallowSelector((state: any) => ({
     editorMode: state.docEditor.editorMode,
     outlineMode: state.docEditor.outlineMode,
     versionOverviewMode: state.docEditor.versionOverviewMode,
     saving: state.docEditor.saving,
+    versionEditMode: state.docEditor.versionEditMode,
+    baseVersion: state.docEditor.baseVersion,
+    newVersionInfo: state.docEditor.newVersionInfo,
+    newVersionContent: state.docEditor.newVersionContent,
   }));
+
+  // 自行从 docVersions model 获取版本列表，内部计算 currentVersion
+  const { docVersions } = useShallowSelector((state: any) => ({
+    docVersions: state.docVersions.docVersions,
+  }));
+
+  // 当前版本（内部计算，不需要从 props 传入）
+  const currentVersion = useMemo(() => {
+    if (!docVersions || docVersions.length === 0) return null;
+    if (versionId) {
+      return docVersions.find((v: any) => v.id === Number(versionId)) || null;
+    }
+    return (
+      docVersions.find((v: any) => v.doc_id === docId && v.is_current) || null
+    );
+  }, [docVersions, docId, versionId]);
 
   // 文档内容、大纲内容、版本总览内容分别管理（state + ref 双轨，ref 保存最新值避免闭包问题）
   const [docContent, setDocContent] = useState('');
@@ -88,6 +79,33 @@ const EditorContent: React.FC<EditorContentProps> = ({
   const prevOutlineModeRef = useRef(outlineMode);
   // 上一次的 versionOverviewMode，用于检测模式切换
   const prevVersionOverviewModeRef = useRef(versionOverviewMode);
+
+  // ==================== 大纲加载（组件自治） ====================
+  useEffect(() => {
+    try {
+      const OUTLINE_STORAGE_KEY = `doc-editor-outline-${docId}`;
+      const stored = localStorage.getItem(OUTLINE_STORAGE_KEY);
+      if (stored) {
+        dispatch({ type: 'docEditor/setOutlineContent', payload: stored });
+      } else {
+        dispatch({
+          type: 'docEditor/setOutlineContent',
+          payload: `# 文档大纲
+
+## 一、项目简介
+### 1.1 项目背景
+### 1.2 项目范围
+
+## 二、系统架构设计
+### 2.1 整体架构
+### 2.2 核心模块
+`,
+        });
+      }
+    } catch (e) {
+      console.error('加载大纲失败:', e);
+    }
+  }, [docId, dispatch]);
 
   // 同步更新内容（state + ref 同时更新）
   const updateDocContent = useCallback((content: string) => {
@@ -141,12 +159,12 @@ const EditorContent: React.FC<EditorContentProps> = ({
       // 之前是大纲模式，保存大纲内容
       outlineContentRef.current = currentContent;
       setOutlineContent(currentContent);
-      onOutlineContentChange?.(currentContent);
+      dispatch({ type: 'docEditor/setOutlineContent', payload: currentContent });
     } else {
       // 之前是内容模式，保存文档内容
       docContentRef.current = currentContent;
       setDocContent(currentContent);
-      onContentChange(currentContent);
+      dispatch({ type: 'docEditor/setEditContent', payload: currentContent });
     }
 
     // 切换到新模式的内容（从 ref 读取最新值，确保是最新的内容）
@@ -156,29 +174,49 @@ const EditorContent: React.FC<EditorContentProps> = ({
     });
 
     prevOutlineModeRef.current = outlineMode;
-  }, [outlineMode, mdxEditorRef, onContentChange, onOutlineContentChange]);
+  }, [outlineMode, mdxEditorRef, dispatch]);
 
   // 内容变化（使用 useCallback 稳定引用，避免 MDXEditor 不必要重渲染）
   const handleContentChange = useCallback(
     (content: string) => {
       if (outlineMode) {
-        // 大纲模式：更新大纲内容（ref + state）
+        // 大纲模式：更新大纲内容（ref + state + model）
         outlineContentRef.current = content;
         setOutlineContent(content);
-        onOutlineContentChange?.(content);
+        dispatch({ type: 'docEditor/setOutlineContent', payload: content });
       } else if (versionOverviewMode) {
-        // 版本总览模式：更新版本总览内容（ref + state）
+        // 版本总览模式：更新版本总览内容（ref + state + model）
         versionOverviewContentRef.current = content;
         setVersionOverviewContent(content);
-        onVersionOverviewContentChange?.(content);
+        dispatch({ type: 'docEditor/setVersionOverviewContent', payload: content });
       } else {
-        // 内容模式：更新文档内容（ref + state）
+        // 内容模式：更新文档内容（ref + state + model）
         docContentRef.current = content;
         setDocContent(content);
-        onContentChange(content);
+        dispatch({ type: 'docEditor/setEditContent', payload: content });
       }
     },
-    [outlineMode, versionOverviewMode, onContentChange, onOutlineContentChange, onVersionOverviewContentChange],
+    [outlineMode, versionOverviewMode, dispatch],
+  );
+
+  // 标题变化（内部 dispatch）
+  const handleTitleChange = useCallback(
+    (title: string) => {
+      if (!doc || doc.name === title) return;
+      dispatch({
+        type: 'docList/handleUpdateDoc',
+        payload: { id: docId, data: { name: title } },
+      });
+    },
+    [dispatch, docId, doc],
+  );
+
+  // 新版本内容变化（内部 dispatch）
+  const handleNewVersionContentChange = useCallback(
+    (content: string) => {
+      dispatch({ type: 'docEditor/setNewVersionContent', payload: content });
+    },
+    [dispatch],
   );
 
   // 退出大纲模式
@@ -256,7 +294,7 @@ const EditorContent: React.FC<EditorContentProps> = ({
           <MDXEditor
             key={`version-diff-${newVersionInfo.version}`}
             value={newVersionContent}
-            onChange={onNewVersionContentChange}
+            onChange={handleNewVersionContentChange}
             readOnly={false}
             showToolbar={true}
             showToc={false}
@@ -371,7 +409,7 @@ const EditorContent: React.FC<EditorContentProps> = ({
             doc={doc}
             currentVersion={currentVersion}
             readOnly={isReadOnly}
-            onTitleChange={onTitleChange}
+            onTitleChange={handleTitleChange}
           />
 
           {/* 右侧：预留空间（按钮已移至工具栏） */}

@@ -1,6 +1,8 @@
 // src/pages/DocEditor/components/EditorRightPanel.tsx
 // 文档编辑页右侧工具坞 - 代码模板/代码片段/文档模板/版本历史
 // 组件自治：自行从 model 获取 activeTab 和 docVersions，自行 dispatch 更新
+// 内部处理插入内容和选择版本
+import type { MDXEditorRef } from '@/components/MDXEditor';
 import CodeTemplateManager from '@/components/CodeTemplateManager';
 import {
   mockCodeTemplateCategories,
@@ -22,7 +24,7 @@ import {
   HistoryOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
-import { useDispatch } from '@umijs/max';
+import { useDispatch, history } from '@umijs/max';
 import {
   Button,
   List,
@@ -32,19 +34,15 @@ import {
   message,
 } from 'antd';
 import dayjs from 'dayjs';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import type { RightPanelTab } from '../types';
 
 interface EditorRightPanelProps {
   docId: number;
   projectId: number;
   currentVersionId?: number;
-  onSelectVersion: (version: DocVersion) => void;
+  mdxEditorRef: React.RefObject<MDXEditorRef>;
   onClose: () => void;
-  /** 插入内容到编辑器 */
-  onInsertContent?: (content: string, name?: string) => void;
-  /** 插入文档模板回调 */
-  onInsertTemplate?: (template: DocTemplateItem) => void;
   /** 编辑文档模板回调（点击模板标题，进入编辑模板模式） */
   onEditTemplate?: (template: DocTemplateItem) => void;
 }
@@ -53,10 +51,8 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
   docId,
   projectId,
   currentVersionId,
-  onSelectVersion,
+  mdxEditorRef,
   onClose,
-  onInsertContent,
-  onInsertTemplate,
   onEditTemplate,
 }) => {
   const dispatch = useDispatch();
@@ -66,6 +62,35 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
     activeTab: state.docEditor.activeRightTab,
     docVersions: state.docVersions.docVersions,
   }));
+
+  // ==================== 插入内容到编辑器（组件自治） ====================
+  const handleInsertContent = useCallback(
+    (content: string, name?: string) => {
+      if (!mdxEditorRef.current) {
+        message.warning('编辑器未就绪，请稍后再试');
+        return;
+      }
+      try {
+        mdxEditorRef.current.focus();
+        mdxEditorRef.current.insertMarkdown(`\n${content}\n`);
+        message.success(`已插入${name ? '：' + name : '内容'}`);
+      } catch (e) {
+        console.error('插入内容失败:', e);
+        message.error('插入内容失败，请重试');
+      }
+    },
+    [mdxEditorRef],
+  );
+
+  // ==================== 选择版本（组件自治） ====================
+  const handleSelectVersion = useCallback(
+    (version: DocVersion) => {
+      history.push(
+        `/docEdit/${docId}?project_id=${projectId}&version=${version.id}`,
+      );
+    },
+    [docId, projectId],
+  );
 
   const tabs: { key: RightPanelTab; icon: React.ReactNode; title: string }[] = [
     { key: 'code_templates', icon: <CodeOutlined />, title: '代码模板' },
@@ -128,8 +153,8 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
             templates={mockCodeTemplates}
             onInsert={(template: any) => {
               const content = template.content || template.code || '';
-              if (onInsertContent && content) {
-                onInsertContent(content, template.name);
+              if (content) {
+                handleInsertContent(content, template.name);
               } else {
                 message.info(`插入模板: ${template.name}`);
               }
@@ -144,8 +169,8 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
             snippets={mockSnippets}
             onInsert={(snippet: any) => {
               const content = snippet.content || snippet.code || '';
-              if (onInsertContent && content) {
-                onInsertContent(content, snippet.name);
+              if (content) {
+                handleInsertContent(content, snippet.name);
               } else {
                 message.info(`插入片段: ${snippet.name}`);
               }
@@ -157,10 +182,8 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
         {activeTab === 'templates' && (
           <DocTemplateManager
             onInsert={(template) => {
-              if (onInsertTemplate) {
-                onInsertTemplate(template);
-              } else if (onInsertContent && template.content) {
-                onInsertContent(template.content, template.title);
+              if (template.content) {
+                handleInsertContent(template.content, template.title);
               }
             }}
             onEdit={(template) => {
@@ -184,7 +207,7 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
                   className={`version-item ${
                     version.id === currentVersionId ? 'active' : ''
                   }`}
-                  onClick={() => onSelectVersion(version)}
+                  onClick={() => handleSelectVersion(version)}
                   style={{ cursor: 'pointer', padding: '10px 12px' }}
                 >
                   <List.Item.Meta

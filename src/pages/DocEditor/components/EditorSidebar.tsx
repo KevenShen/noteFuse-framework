@@ -1,45 +1,33 @@
 // src/pages/DocEditor/components/EditorSidebar.tsx
 // 文档编辑页左侧栏 - 文档目录 + 文档标签（Collapse 折叠面板）
-// 组件自治：自行从 model 获取 categories/docs/docVersions/tags 数据
+// 组件自治：自行从 model 获取数据，内部处理分类/文档/标签管理回调
 import DocTree from '@/components/DocTree';
 import type { ManageActionType, VersionActionType } from '@/components/DocTree/types';
 import TagManager from '@/components/TagManager';
 import type { TagItem } from '@/components/TagManager/types';
 import type { DocVersion } from '@/components/DocTree/types';
 import { useShallowSelector } from '@/hooks';
-import { useDispatch } from '@umijs/max';
+import { useDispatch, history } from '@umijs/max';
 import { FolderOpenOutlined, TagsOutlined } from '@ant-design/icons';
-import { history } from '@umijs/max';
-import { Tag } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
+import { Tag, message } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface EditorSidebarProps {
   currentDocId: number;
   currentVersionId?: number;
   projectId: number;
-  onSelectDoc: (docId: number) => void;
   /** 是否允许管理（创建者可管理） */
   canManage?: boolean;
-  /** 管理分类回调 */
-  onManageCategory?: (action: ManageActionType, data?: any) => void | Promise<void>;
-  /** 管理文档回调 */
-  onManageDoc?: (action: ManageActionType, data?: any) => void | Promise<void>;
-  /** 管理版本回调 */
+  /** 管理版本回调（涉及版本对比编辑模式，暂保留为 props） */
   onManageVersion?: (action: VersionActionType, data?: any) => void | Promise<void>;
-  /** 切换标签关联状态 */
-  onToggleTag?: (tagId: number | string, selected: boolean) => void;
 }
 
 const EditorSidebar: React.FC<EditorSidebarProps> = ({
   currentDocId,
   currentVersionId,
   projectId,
-  onSelectDoc,
   canManage = false,
-  onManageCategory,
-  onManageDoc,
   onManageVersion,
-  onToggleTag,
 }) => {
   const dispatch = useDispatch();
 
@@ -76,6 +64,100 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
   const selectedTagIds = useMemo(
     () => docTags?.map((t: any) => t.id) || [],
     [docTags],
+  );
+
+  // ==================== 管理分类（组件自治） ====================
+  const handleManageCategory = useCallback(
+    async (action: ManageActionType, data?: any) => {
+      switch (action) {
+        case 'add-category':
+          await dispatch({
+            type: 'projectCategory/handleCreateCategory',
+            payload: { ...data, project_id: projectId },
+          });
+          break;
+        case 'edit-category':
+          await dispatch({
+            type: 'projectCategory/handleUpdateCategory',
+            payload: { id: data.id, data },
+          });
+          break;
+        case 'delete-category':
+          await dispatch({
+            type: 'projectCategory/handleDeleteCategory',
+            payload: data.id,
+          });
+          break;
+        default:
+          break;
+      }
+    },
+    [dispatch, projectId],
+  );
+
+  // ==================== 管理文档（组件自治） ====================
+  const handleManageDoc = useCallback(
+    async (action: ManageActionType, data?: any) => {
+      switch (action) {
+        case 'add-doc': {
+          const newDoc = await dispatch({
+            type: 'docList/handleCreateDoc',
+            payload: { ...data, project_id: projectId },
+          });
+          if (newDoc?.id) {
+            history.push(`/docEdit/${newDoc.id}?project_id=${projectId}`);
+          }
+          break;
+        }
+        case 'edit-doc':
+          await dispatch({
+            type: 'docList/handleUpdateDoc',
+            payload: { id: data.id, data },
+          });
+          break;
+        case 'delete-doc': {
+          const deletedId = data.id;
+          await dispatch({
+            type: 'docList/handleDeleteDoc',
+            payload: deletedId,
+          });
+          if (deletedId === currentDocId) {
+            history.push(`/projectDetail/${projectId}`);
+          }
+          break;
+        }
+        case 'move-doc':
+          await dispatch({
+            type: 'docList/handleUpdateDoc',
+            payload: {
+              id: data.id,
+              data: { doc_category_id: data.category_id },
+            },
+          });
+          break;
+        default:
+          break;
+      }
+    },
+    [dispatch, projectId, currentDocId],
+  );
+
+  // ==================== 切换标签关联（组件自治） ====================
+  const handleToggleTag = useCallback(
+    async (tagId: number | string, selected: boolean) => {
+      if (selected) {
+        await dispatch({
+          type: 'tag/handleAddDocTag',
+          payload: { doc_id: currentDocId, tag_id: Number(tagId) },
+        });
+      } else {
+        await dispatch({
+          type: 'tag/handleRemoveDocTag',
+          payload: { doc_id: currentDocId, tag_id: Number(tagId) },
+        });
+      }
+    },
+    [dispatch, currentDocId],
   );
 
   const STORAGE_KEY = 'docEditor_sidebarActiveKey';
@@ -127,7 +209,7 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
         history.push(`/docEdit/${doc.id}?project_id=${projectId}&version=${versionId}`);
       }
     } else {
-      onSelectDoc(Number(key));
+      history.push(`/docEdit/${key}?project_id=${projectId}`);
     }
   };
 
@@ -170,8 +252,8 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
                     enableVersion={true}
                     defaultExpandVersion={true}
                     onSelectVersion={handleSelectVersion}
-                    onManageCategory={onManageCategory}
-                    onManageDoc={onManageDoc}
+                    onManageCategory={handleManageCategory}
+                    onManageDoc={handleManageDoc}
                     onManageVersion={onManageVersion}
                   />
                 </div>
@@ -201,7 +283,7 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
                     categories={tagCategories || []}
                     docId={currentDocId}
                     selectedTagIds={selectedTagIds}
-                    onToggleTag={onToggleTag}
+                    onToggleTag={handleToggleTag}
                     showSearch={true}
                     showCategoryFilter={true}
                     showManage={false}
