@@ -26,7 +26,11 @@ export async function clientLoader() {
       recentBrowsedPage: data.page || 1,
     };
   } catch (e) {
-    return { recentBrowsedList: [], recentBrowsedTotal: 0, recentBrowsedPage: 1 };
+    return {
+      recentBrowsedList: [],
+      recentBrowsedTotal: 0,
+      recentBrowsedPage: 1,
+    };
   }
 }
 
@@ -59,21 +63,31 @@ const RecentPage: React.FC = () => {
   } = useSelector((state: any) => state.recent);
 
   // 优先 model 数据（交互更新后），兜底 clientLoader 预加载数据（首屏）
-  const { recentBrowsedList, recentBrowsedTotal, recentBrowsedPage } = useMemo(() => {
-    const useModel = modelBrowsedList?.length > 0;
-    const src = useModel
-      ? { list: modelBrowsedList, total: modelBrowsedTotal, page: modelBrowsedPage }
-      : {
-          list: clientLoaderData?.recentBrowsedList,
-          total: clientLoaderData?.recentBrowsedTotal,
-          page: clientLoaderData?.recentBrowsedPage,
-        };
-    return {
-      recentBrowsedList: src.list || [],
-      recentBrowsedTotal: src.total ?? 0,
-      recentBrowsedPage: src.page ?? 1,
-    };
-  }, [modelBrowsedList, modelBrowsedTotal, modelBrowsedPage, clientLoaderData]);
+  const { recentBrowsedList, recentBrowsedTotal, recentBrowsedPage } =
+    useMemo(() => {
+      const useModel = modelBrowsedList?.length > 0;
+      const src = useModel
+        ? {
+            list: modelBrowsedList,
+            total: modelBrowsedTotal,
+            page: modelBrowsedPage,
+          }
+        : {
+            list: clientLoaderData?.recentBrowsedList,
+            total: clientLoaderData?.recentBrowsedTotal,
+            page: clientLoaderData?.recentBrowsedPage,
+          };
+      return {
+        recentBrowsedList: src.list || [],
+        recentBrowsedTotal: src.total ?? 0,
+        recentBrowsedPage: src.page ?? 1,
+      };
+    }, [
+      modelBrowsedList,
+      modelBrowsedTotal,
+      modelBrowsedPage,
+      clientLoaderData,
+    ]);
 
   // 当前登录用户（用于权限判断）
   const { currentUser } = useSelector((state: any) => state.user);
