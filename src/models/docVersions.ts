@@ -32,6 +32,29 @@ export default {
         state.docVersions[index] = { ...state.docVersions[index], ...payload };
       }
     },
+    /** 更新版本内容（本地数据同步） */
+    updateDocVersionContent(
+      state: DocVersionsState,
+      { payload }: { payload: { id: number; content: string } },
+    ) {
+      const index = state.docVersions.findIndex((v) => v.id === payload.id);
+      if (index >= 0) {
+        state.docVersions[index] = { ...state.docVersions[index], content: payload.content };
+      }
+    },
+    /** 添加新版本（本地数据同步，创建版本后立即更新左栏） */
+    addDocVersion(
+      state: DocVersionsState,
+      { payload }: { payload: DocVersion },
+    ) {
+      // 将所有旧版本设为非当前
+      state.docVersions = state.docVersions.map((v) => ({
+        ...v,
+        is_current: false,
+      }));
+      // 添加新版本（is_current 为 true）
+      state.docVersions.push(payload);
+    },
   },
 
   effects: {
@@ -59,6 +82,7 @@ export default {
       }: {
         payload: {
           id: number;
+          projectId: number;
           content: string;
           remark?: string;
           version_name?: string;
@@ -69,8 +93,12 @@ export default {
       try {
         const res = yield call(docVersionsService.createDocVersion, payload);
         message.success('新版本创建成功');
-        // 重新获取版本列表
-        yield put({ type: 'fetchDocVersions', payload: 1 });
+        // 立即更新本地版本列表，确保左栏显示新版本（不依赖异步 fetchDocVersions）
+        if (res?.data) {
+          yield put({ type: 'addDocVersion', payload: res.data });
+        }
+        // 异步重新获取版本列表，确保数据一致性
+        yield put({ type: 'fetchDocVersions', payload: payload.projectId });
         return res;
       } catch (e) {
         message.error('创建版本失败');
@@ -85,6 +113,7 @@ export default {
       }: {
         payload: {
           doc_id: number;
+          projectId: number;
           version: string;
           status: string;
           remark?: string;
@@ -95,14 +124,18 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        const { doc_id, ...data } = payload;
+        const { doc_id, projectId, ...data } = payload;
         const res = yield call(docVersionsService.createDocVersion, {
           id: doc_id,
           ...data,
         });
         message.success(`新版本 ${payload.version} 创建成功`);
-        // 重新获取版本列表
-        yield put({ type: 'fetchDocVersions', payload: doc_id });
+        // 立即更新本地版本列表，确保左栏显示新版本
+        if (res?.data) {
+          yield put({ type: 'addDocVersion', payload: res.data });
+        }
+        // 异步重新获取版本列表，确保数据一致性
+        yield put({ type: 'fetchDocVersions', payload: projectId });
         return res.data;
       } catch (e) {
         message.error('创建新版本失败');
@@ -201,6 +234,23 @@ export default {
         return res.data;
       } catch (e) {
         message.error('版本回滚失败');
+        return null;
+      }
+    },
+
+    /** 保存版本原文（带标记，同时检测孤立批注） */
+    *saveVersionContent(
+      { payload }: { payload: { versionId: number; content: string } },
+      { call, put }: any,
+    ): Generator<any, any, any> {
+      try {
+        const res = yield call(docVersionsService.saveVersionContent, payload);
+        message.success('保存成功');
+        // 更新本地版本数据中的 content 字段
+        yield put({ type: 'updateDocVersionContent', payload: res.data });
+        return res;
+      } catch (e) {
+        message.error('保存失败');
         return null;
       }
     },

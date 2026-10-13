@@ -72,19 +72,19 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
       switch (action) {
         case 'add-category':
           await dispatch({
-            type: 'projectCategory/handleCreateCategory',
+            type: 'docCategory/handleCreateDocCategory',
             payload: { ...data, project_id: projectId },
           });
           break;
         case 'edit-category':
           await dispatch({
-            type: 'projectCategory/handleUpdateCategory',
+            type: 'docCategory/handleUpdateDocCategory',
             payload: { id: data.id, data },
           });
           break;
         case 'delete-category':
           await dispatch({
-            type: 'projectCategory/handleDeleteCategory',
+            type: 'docCategory/handleDeleteDocCategory',
             payload: data.id,
           });
           break;

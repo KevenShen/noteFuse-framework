@@ -14,7 +14,7 @@ import {
   ProfileOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { useDispatch } from '@umijs/max';
+import { useDispatch, history } from '@umijs/max';
 import { Button, Modal, Space, Tooltip, message } from 'antd';
 import React, { useCallback, useMemo } from 'react';
 import './EditorToolbar.less';
@@ -105,25 +105,33 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         message.success('版本总览保存成功');
       });
     } else {
-      // 内容模式：保存文档内容到当前版本
+      // 内容模式：保存文档内容
       if (!currentVersion?.id) {
-        message.error('未找到当前版本，无法保存');
-        dispatch({ type: 'docEditor/setSaving', payload: false });
+        // 没有版本时，自动创建新版本
+        dispatch({ type: 'docEditor/setSaving', payload: true });
+        dispatch({
+          type: 'docVersions/createDocVersion',
+          payload: { id: docId, projectId, content, remark: '首次保存自动创建版本' },
+        }).then((res: any) => {
+          dispatch({ type: 'docEditor/setSaving', payload: false });
+          if (res?.data?.id) {
+            // 创建成功后切换到新版本
+            history.push(`/docEdit/${docId}?project_id=${projectId}&version=${res.data.id}`);
+          }
+        });
         return;
       }
       dispatch({
-        type: 'docDetail/saveDocContent',
+        type: 'docVersions/saveVersionContent',
         payload: {
           versionId: currentVersion.id,
           content,
-          docId,
-          projectId,
         },
       }).then(() => {
         dispatch({ type: 'docEditor/setSaving', payload: false });
       });
     }
-  }, [mdxEditorRef, editContent, outlineMode, versionOverviewMode, currentVersion, docId, projectId, dispatch]);
+  }, [mdxEditorRef, editContent, outlineMode, versionOverviewMode, currentVersion, dispatch]);
 
   // ==================== 存为新版本（组件自治） ====================
   const handleCreateVersion = useCallback(() => {
@@ -134,11 +142,16 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
       onOk: () => {
         dispatch({
           type: 'docVersions/createDocVersion',
-          payload: { id: docId, content, remark: '手动保存的新版本' },
+          payload: { id: docId, projectId, content, remark: '手动保存的新版本' },
+        }).then((res: any) => {
+          if (res?.data?.id) {
+            // 创建成功后切换到新版本
+            history.push(`/docEdit/${docId}?project_id=${projectId}&version=${res.data.id}`);
+          }
         });
       },
     });
-  }, [mdxEditorRef, editContent, docId, dispatch]);
+  }, [mdxEditorRef, editContent, docId, projectId, dispatch]);
 
   // 保存新版本（版本对比编辑模式）
   const handleSaveNewVersion = useCallback(async () => {
@@ -308,15 +321,18 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
                   保存
                 </Button>
               </Tooltip>
-              <Tooltip title="将当前内容保存为新版本">
-                <Button
-                  size="middle"
-                  icon={<HistoryOutlined />}
-                  onClick={handleCreateVersion}
-                >
-                  存为新版本
-                </Button>
-              </Tooltip>
+              {/* 大纲/版本总览模式下隐藏"存为新版本"（这两种模式只保存到当前版本） */}
+              {!outlineMode && !versionOverviewMode && (
+                <Tooltip title="将当前内容保存为新版本">
+                  <Button
+                    size="middle"
+                    icon={<HistoryOutlined />}
+                    onClick={handleCreateVersion}
+                  >
+                    存为新版本
+                  </Button>
+                </Tooltip>
+              )}
             </>
           )
         )}

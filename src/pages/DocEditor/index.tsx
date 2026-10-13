@@ -185,6 +185,8 @@ const DocEditorPage: React.FC = () => {
           // 新建版本：
           // 1. 如果选择了基底版本，进入对比编辑模式（左栏基底版本只读，右栏新版本可编辑）
           // 2. 如果没有选择基底版本，进入平常的新建版本内容功能（内容为空，正常编辑模式）
+          // 注意：data.doc_id 是用户点击的文档ID，可能不同于当前编辑的 docId
+          const targetDocId = data?.doc_id || docId;
           const baseVersionId = data?.base_version_id;
           const base = baseVersionId
             ? docVersions.find((v: any) => v.id === baseVersionId)
@@ -214,20 +216,26 @@ const DocEditorPage: React.FC = () => {
             // 没有选择基底版本：进入平常的新建版本内容功能
             // 创建新版本（内容为空），然后切换到该版本进行编辑
             try {
+              // 计算目标文档的版本数量，生成新版本号
+              const targetDocVersions = docVersions.filter(
+                (v: any) => v.doc_id === targetDocId,
+              );
               const result = await dispatch({
                 type: 'docVersions/handleCreateDocVersion',
                 payload: {
-                  doc_id: docId,
-                  version: data?.version || `v${docVersions.length + 1}.0`,
+                  doc_id: targetDocId,
+                  projectId,
+                  version: data?.version || `v${targetDocVersions.length + 1}.0`,
                   status: data?.status || 'draft',
                   remark: data?.remark || '',
                   content: '',
                 },
               });
-              if (result?.success && result?.data?.id) {
+              // handleCreateDocVersion effect 返回的是新版本对象（res.data）
+              if (result?.id) {
                 // 切换到新版本进行编辑
                 history.push(
-                  `/docEdit/${docId}?project_id=${projectId}&version=${result.data.id}`,
+                  `/docEdit/${targetDocId}?project_id=${projectId}&version=${result.id}`,
                 );
                 message.success('新版本创建成功，内容为空，请开始编辑');
               } else {
@@ -285,12 +293,31 @@ const DocEditorPage: React.FC = () => {
   const mdxEditorRef = useRef<MDXEditorRef>(null);
   const templateManagerRef = useRef<TemplateManagerRef>(null);
 
+  // 记录上一次的 versionId，用于检测版本切换
+  const prevVersionIdRef = useRef<string | null | undefined>(versionId);
+
   // ==================== 数据兜底：clientLoader 数据为空时才从 API 获取 ====================
+  // 版本切换时（versionId 变化），即使 clientLoader 已有数据，也需要重新获取文档详情
   useEffect(() => {
     const pid = Number(projectId);
+    const versionChanged = prevVersionIdRef.current !== versionId;
     const hasData =
       clientLoaderData?.currentDoc || clientLoaderData?.docList?.length;
-    if (hasData) return; // clientLoader 已预加载，跳过
+
+    // 版本切换时，强制重新获取文档详情（其他数据不随版本变化，不需要重新获取）
+    if (versionChanged && docId) {
+      dispatch({
+        type: 'docDetail/fetchDocDetail',
+        payload: versionId ? { id: docId, version: Number(versionId) } : docId,
+      });
+      prevVersionIdRef.current = versionId;
+      return;
+    }
+
+    if (hasData) {
+      prevVersionIdRef.current = versionId;
+      return; // clientLoader 已预加载，跳过
+    }
 
     if (pid) {
       dispatch({ type: 'projectDetail/fetchProjectDetail', payload: pid });
@@ -304,6 +331,7 @@ const DocEditorPage: React.FC = () => {
         payload: versionId ? { id: docId, version: Number(versionId) } : docId,
       });
     }
+    prevVersionIdRef.current = versionId;
   }, [dispatch, projectId, docId, versionId, clientLoaderData]);
 
   // ==================== 事件处理 ====================

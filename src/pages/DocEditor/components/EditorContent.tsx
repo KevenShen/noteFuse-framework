@@ -67,9 +67,10 @@ const EditorContent: React.FC<EditorContentProps> = ({
   }, [docVersions, docId, versionId]);
 
   // 文档内容、大纲内容、版本总览内容分别管理（state + ref 双轨，ref 保存最新值避免闭包问题）
-  const [docContent, setDocContent] = useState('');
-  const [outlineContent, setOutlineContent] = useState('');
-  const [versionOverviewContent, setVersionOverviewContent] = useState('');
+  // 使用惰性初始化，确保首次渲染就有正确值（避免独立编辑器初始为空）
+  const [docContent, setDocContent] = useState(() => '');
+  const [outlineContent, setOutlineContent] = useState(() => '');
+  const [versionOverviewContent, setVersionOverviewContent] = useState(() => doc?.version_overview || '');
   const docContentRef = useRef('');
   const outlineContentRef = useRef('');
   const versionOverviewContentRef = useRef('');
@@ -124,6 +125,7 @@ const EditorContent: React.FC<EditorContentProps> = ({
   }, []);
 
   // 初始化版本内容（文档内容 + 大纲内容 + 版本总览内容）
+  // 只在 currentVersion.id 或 doc.version_overview 变化时执行，不依赖模式切换
   useEffect(() => {
     if (currentVersion && doc) {
       const content = currentVersion.content || '';
@@ -134,24 +136,23 @@ const EditorContent: React.FC<EditorContentProps> = ({
       updateVersionOverviewContent(versionOverview);
       // 延迟到下一帧执行，确保编辑器实例已创建
       requestAnimationFrame(() => {
-        // 根据当前模式初始化编辑器内容
-        let initialContent = content;
-        if (outlineMode) {
-          initialContent = outline;
-        } else if (versionOverviewMode) {
-          initialContent = versionOverview;
+        // 只初始化主编辑器内容（版本总览模式使用独立编辑器，由 value prop 控制）
+        if (!versionOverviewMode) {
+          const initialContent = outlineMode ? outline : content;
+          mdxEditorRef.current?.setMarkdown(initialContent);
         }
-        mdxEditorRef.current?.setMarkdown(initialContent);
         contentInitializedRef.current = true;
       });
     }
-  }, [currentVersion?.id, doc?.version_overview, mdxEditorRef, outlineMode, versionOverviewMode, updateDocContent, updateOutlineContent, updateVersionOverviewContent]);
+  }, [currentVersion?.id, doc?.version_overview, mdxEditorRef, updateDocContent, updateOutlineContent, updateVersionOverviewContent]);
 
   // 监听 outlineMode 变化，切换编辑器内容（使用同一个 MDXEditor 实例）
-  // 关键：从 ref 读取最新内容，避免闭包中的旧 state 问题
+  // 关键：从 ref 读取最新内容，避免闭包中的旧 state 问题；使用 setTimeout 确保在 useEditorValueSync 同步之后执行
   useEffect(() => {
     if (!contentInitializedRef.current) return;
     if (prevOutlineModeRef.current === outlineMode) return;
+    // 版本总览模式下主编辑器被卸载，不需要处理（由版本总览切换 useEffect 处理）
+    if (versionOverviewMode) return;
 
     // 保存当前编辑器内容到对应的 ref（立即保存，不依赖 setState）
     const currentContent = mdxEditorRef.current?.getMarkdown() || '';
@@ -168,13 +169,46 @@ const EditorContent: React.FC<EditorContentProps> = ({
     }
 
     // 切换到新模式的内容（从 ref 读取最新值，确保是最新的内容）
+    // 使用 setTimeout 延迟执行，确保在 useEditorValueSync 的值同步之后，避免被覆盖
     const targetContent = outlineMode ? outlineContentRef.current : docContentRef.current;
-    requestAnimationFrame(() => {
+    const timer = setTimeout(() => {
       mdxEditorRef.current?.setMarkdown(targetContent);
-    });
+    }, 0);
 
     prevOutlineModeRef.current = outlineMode;
-  }, [outlineMode, mdxEditorRef, dispatch]);
+    return () => clearTimeout(timer);
+  }, [outlineMode, versionOverviewMode, mdxEditorRef, dispatch]);
+
+  // 监听 versionOverviewMode 变化，处理版本总览模式与普通模式的切换
+  // 版本总览模式使用独立编辑器，切换回普通模式时主编辑器被重新创建，需要确保内容正确
+  useEffect(() => {
+    if (!contentInitializedRef.current) return;
+    if (prevVersionOverviewModeRef.current === versionOverviewMode) return;
+
+    if (versionOverviewMode) {
+      // 进入版本总览模式：保存当前主编辑器内容到对应的 ref
+      const currentContent = mdxEditorRef.current?.getMarkdown() || '';
+      if (outlineMode) {
+        outlineContentRef.current = currentContent;
+        setOutlineContent(currentContent);
+        dispatch({ type: 'docEditor/setOutlineContent', payload: currentContent });
+      } else {
+        docContentRef.current = currentContent;
+        setDocContent(currentContent);
+        dispatch({ type: 'docEditor/setEditContent', payload: currentContent });
+      }
+    } else {
+      // 退出版本总览模式：主编辑器被重新创建，延迟设置内容（等待编辑器实例初始化）
+      const targetContent = outlineMode ? outlineContentRef.current : docContentRef.current;
+      const timer = setTimeout(() => {
+        mdxEditorRef.current?.setMarkdown(targetContent);
+      }, 50);
+      prevVersionOverviewModeRef.current = versionOverviewMode;
+      return () => clearTimeout(timer);
+    }
+
+    prevVersionOverviewModeRef.current = versionOverviewMode;
+  }, [versionOverviewMode, outlineMode, mdxEditorRef, dispatch]);
 
   // 内容变化（使用 useCallback 稳定引用，避免 MDXEditor 不必要重渲染）
   const handleContentChange = useCallback(
