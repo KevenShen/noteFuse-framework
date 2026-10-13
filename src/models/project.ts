@@ -56,6 +56,11 @@ export default {
     ) {
       state.projectList = payload;
     },
+    /** 删除单条文集（本地乐观移除 + 总数-1，避免删除后再全量拉取） */
+    removeProject(state: ProjectState, { payload }: { payload: number }) {
+      state.projectList = state.projectList.filter((p) => p.id !== payload);
+      state.pagination.total = Math.max(0, state.pagination.total - 1);
+    },
     saveTotal(state: ProjectState, { payload }: { payload: number }) {
       state.pagination.total = payload;
     },
@@ -169,10 +174,23 @@ export default {
     // ==================== 删除文集 ====================
     *handleDeleteProject(
       { payload }: { payload: number },
-      { call }: any,
+      { call, put, select }: any,
     ): Generator<any, any, any> {
       try {
         yield call(projectService.deleteProject, { id: payload });
+        // 本地乐观移除 + 总数-1，避免删除后再全量拉取
+        yield put({ type: 'removeProject', payload });
+        // 分页边界：删空当前页且不是第1页时，回退一页并拉取上一页数据
+        const { projectList, pagination } = yield select(
+          (state: any) => state.project,
+        );
+        if (projectList.length === 0 && pagination.current > 1) {
+          yield put({
+            type: 'setPagination',
+            payload: { current: pagination.current - 1 },
+          });
+          yield put({ type: 'fetchProjectList' });
+        }
         message.success('删除成功');
         return true;
       } catch (e) {

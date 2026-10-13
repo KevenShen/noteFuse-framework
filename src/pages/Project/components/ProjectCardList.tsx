@@ -3,6 +3,8 @@
 // 组件内自治：viewMode、loading、isMobile、分页/删除/置顶 dispatch
 
 import { getIconComponent } from '@/components/IconPicker/iconData';
+import { MOBILE_BREAKPOINT } from '@/constants';
+import { useMobile, useShallowSelector } from '@/hooks';
 import {
   ClockCircleOutlined,
   EditOutlined,
@@ -31,14 +33,10 @@ import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import React from 'react';
-import { useMobile, useShallowSelector } from '@/hooks';
 import type { PaginationState, ProjectItem, ViewMode } from '../types';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
-
-/** 移动端断点 */
-const MOBILE_BREAKPOINT = 768;
 
 interface ProjectCardListProps {
   projects: ProjectItem[];
@@ -71,15 +69,12 @@ const ProjectCardList: React.FC<ProjectCardListProps> = ({
     });
   };
 
-  /** 删除文集 */
+  /** 删除文集（model 内已做本地移除 + 分页边界回退，无需二次拉取） */
   const handleDelete = async (id: number) => {
-    const result = await dispatch({
+    await dispatch({
       type: 'project/handleDeleteProject',
       payload: id,
     });
-    if (result) {
-      dispatch({ type: 'project/fetchProjectList' });
-    }
   };
 
   /** 置顶/取消置顶 */
@@ -88,6 +83,17 @@ const ProjectCardList: React.FC<ProjectCardListProps> = ({
       type: 'project/handleToggleTop',
       payload: { id, is_top: isTop },
     });
+  };
+
+  /** 新建文档：先创建拿到真实 ID，再跳转编辑页（避免 /docEdit/0 空 id 约定） */
+  const handleCreateDoc = async (projectId: number) => {
+    const newDoc = await dispatch({
+      type: 'docList/handleCreateDoc',
+      payload: { project_id: projectId, name: '未命名文档' },
+    });
+    if (newDoc?.id) {
+      history.push(`/docEdit/${newDoc.id}?project_id=${projectId}`);
+    }
   };
 
   // ==================== 操作菜单 ====================
@@ -193,9 +199,7 @@ const ProjectCardList: React.FC<ProjectCardListProps> = ({
                           type="link"
                           size="small"
                           icon={<FileTextOutlined />}
-                          onClick={() =>
-                            history.push(`/doc/create?project_id=${project.id}`)
-                          }
+                          onClick={() => handleCreateDoc(project.id)}
                         >
                           新建
                         </Button>,
@@ -294,9 +298,7 @@ const ProjectCardList: React.FC<ProjectCardListProps> = ({
                             type="primary"
                             ghost
                             icon={<FileTextOutlined />}
-                            onClick={() =>
-                              history.push(`/docEdit?project_id=${project.id}`)
-                            }
+                            onClick={() => handleCreateDoc(project.id)}
                           >
                             新建文档
                           </Button>
@@ -392,9 +394,7 @@ const ProjectCardList: React.FC<ProjectCardListProps> = ({
                   type="text"
                   icon={<FileTextOutlined />}
                   size="small"
-                  onClick={() =>
-                    history.push(`/docEdit/0?project_id=${project.id}`)
-                  }
+                  onClick={() => handleCreateDoc(project.id)}
                 >
                   {isMobile ? '' : '新建文档'}
                 </Button>

@@ -4,12 +4,16 @@
 
 import { getIconComponent } from '@/components/IconPicker';
 import { buildCategoryMenu } from '@/components/tree';
+import { MOBILE_BREAKPOINT } from '@/constants';
 import { useMobile, useShallowSelector } from '@/hooks';
 import {
   AppstoreAddOutlined,
   AppstoreOutlined,
   BarsOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
   DownOutlined,
+  FileTextOutlined,
   FilterOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
@@ -37,9 +41,6 @@ import {
 } from 'antd';
 import React from 'react';
 import type { CategoryItem, ProjectFilterState, ViewMode } from '../types';
-
-/** 移动端断点 */
-const MOBILE_BREAKPOINT = 768;
 
 interface ProjectFilterBarProps {
   categories: CategoryItem[];
@@ -89,10 +90,10 @@ const ProjectFilterBar: React.FC<ProjectFilterBarProps> = ({
   ];
 
   const sortMenuItems: MenuProps['items'] = [
-    { key: 'update', label: '最近更新' },
-    { key: 'create', label: '创建时间' },
-    { key: 'count', label: '文档数量' },
-    { key: 'name', label: '名称排序' },
+    { key: 'update', label: '最近更新', icon: <ClockCircleOutlined /> },
+    { key: 'create', label: '创建时间', icon: <CalendarOutlined /> },
+    { key: 'count', label: '文档数量', icon: <FileTextOutlined /> },
+    { key: 'name', label: '名称排序', icon: <SortAscendingOutlined /> },
   ];
 
   // 使用公共函数构建分类菜单（扁平化数据 → Ant Design Menu 结构）
@@ -137,18 +138,18 @@ const ProjectFilterBar: React.FC<ProjectFilterBarProps> = ({
     return <TagsFilled />;
   };
 
-  /** 筛选变更：更新 filters + 重置分页 */
-  const handleFilter = (key: string) => {
-    dispatch({ type: 'project/setFilters', payload: { filter: key } });
-    dispatch({ type: 'project/setPagination', payload: { current: 1 } });
-  };
-
   /** 分类变更：更新 filters + 重置分页 */
   const handleCategory = (key: string) => {
     dispatch({
       type: 'project/setFilters',
       payload: { project_category_id: Number(key) },
     });
+    dispatch({ type: 'project/setPagination', payload: { current: 1 } });
+  };
+
+  /** 筛选变更：更新 filters + 重置分页 */
+  const handleFilter = (key: string) => {
+    dispatch({ type: 'project/setFilters', payload: { filter: key } });
     dispatch({ type: 'project/setPagination', payload: { current: 1 } });
   };
 

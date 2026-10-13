@@ -15,7 +15,9 @@ export interface ProjectCategoryState {
 }
 
 const initialState: ProjectCategoryState = {
+  // 分类列表
   projectCategoryList: [],
+  /** 列表加载状态 */
   loading: false,
 };
 

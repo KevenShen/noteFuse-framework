@@ -7,6 +7,7 @@ import {
   ReloadOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
+import { useSetState } from 'ahooks';
 import {
   Button,
   Drawer,
@@ -22,18 +23,8 @@ import {
   message,
 } from 'antd';
 import type { FormProps } from 'antd/es/form';
-import type {
-  ColumnType,
-  ColumnsType,
-  TableProps,
-} from 'antd/es/table';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import type { ColumnType, ColumnsType, TableProps } from 'antd/es/table';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import './index.less';
 
 //#region 类型定义
@@ -107,11 +98,17 @@ export interface CategoryManagerProps {
   batchMoveModalTitle?: string;
   selectedCountPrefix?: string;
   selectedCountSuffix?: string;
-  onAdd?: (values: any, parentId?: number | string | null) => Promise<void> | void;
+  onAdd?: (
+    values: any,
+    parentId?: number | string | null,
+  ) => Promise<void> | void;
   onEdit?: (values: any, record: CategoryItem) => Promise<void> | void;
   onDelete?: (record: CategoryItem) => Promise<void> | void;
   onBatchDelete?: (keys: (number | string)[]) => Promise<void> | void;
-  onBatchMove?: (keys: (number | string)[], targetParentId: number | string) => Promise<void> | void;
+  onBatchMove?: (
+    keys: (number | string)[],
+    targetParentId: number | string,
+  ) => Promise<void> | void;
   onRefresh?: () => void;
   onSaveSort?: (sortedItems: CategoryItem[]) => Promise<void> | void;
   sortable?: boolean;
@@ -151,7 +148,10 @@ const flatToTree = (list: CategoryItem[]): CategoryItem[] => {
 };
 
 /** 树形结构转扁平化数组（保留 sort 和 parent_id） */
-const treeToFlat = (tree: CategoryItem[], parentId: number | string = 0): CategoryItem[] => {
+const treeToFlat = (
+  tree: CategoryItem[],
+  parentId: number | string = 0,
+): CategoryItem[] => {
   const result: CategoryItem[] = [];
   tree.forEach((item) => {
     const { children, ...rest } = item;
@@ -161,7 +161,10 @@ const treeToFlat = (tree: CategoryItem[], parentId: number | string = 0): Catego
   return result;
 };
 
-const findRecordById = (tree: CategoryItem[], id: number | string): CategoryItem | null => {
+const findRecordById = (
+  tree: CategoryItem[],
+  id: number | string,
+): CategoryItem | null => {
   for (const item of tree) {
     if (item.id === id) return item;
     if (item.children?.length) {
@@ -172,7 +175,10 @@ const findRecordById = (tree: CategoryItem[], id: number | string): CategoryItem
   return null;
 };
 
-const getSiblingsById = (tree: CategoryItem[], id: number | string): CategoryItem[] => {
+const getSiblingsById = (
+  tree: CategoryItem[],
+  id: number | string,
+): CategoryItem[] => {
   const record = findRecordById(tree, id);
   if (!record) return [];
   const parentId = record.parent_id ?? 0;
@@ -189,7 +195,10 @@ const updateSiblingsInTree = (
   return tree.map((item) => {
     if (item.id === parentId) return { ...item, children: newSiblings };
     if (item.children?.length) {
-      return { ...item, children: updateSiblingsInTree(item.children, parentId, newSiblings) };
+      return {
+        ...item,
+        children: updateSiblingsInTree(item.children, parentId, newSiblings),
+      };
     }
     return item;
   });
@@ -230,9 +239,11 @@ const canMoveTo = (
   let maxSubtreeDepth = 0;
   selectedIds.forEach((id) => {
     const node = findRecordById(tree, id);
-    if (node) maxSubtreeDepth = Math.max(maxSubtreeDepth, getSubtreeDepth(node));
+    if (node)
+      maxSubtreeDepth = Math.max(maxSubtreeDepth, getSubtreeDepth(node));
   });
-  const targetLevel = targetParentId === 0 ? 0 : getNodeLevel(tree, targetParentId);
+  const targetLevel =
+    targetParentId === 0 ? 0 : getNodeLevel(tree, targetParentId);
   return targetLevel + maxSubtreeDepth + 1 <= maxLevel;
 };
 //#endregion
@@ -285,22 +296,44 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   );
 
   //#region 状态
-  const [dialogVisible, setDialogVisible] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<CategoryItem | null>(null);
-  const [parentId, setParentId] = useState<number | string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [expandedRowKeys, setExpandedRowKeys] = useState<(number | string)[]>([]);
-  const [dragRowId, setDragRowId] = useState<number | string | null>(null);
-  const [dropRowId, setDropRowId] = useState<number | string | null>(null);
-  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
-  const [localDataSource, setLocalDataSource] = useState<CategoryItem[]>(treeData);
-  const [hasSortChanges, setHasSortChanges] = useState(false);
-  const [savingSort, setSavingSort] = useState(false);
-  const [selectedRowKeys, setSelectedRowKeys] = useState<(number | string)[]>([]);
-  const [batchMoveVisible, setBatchMoveVisible] = useState(false);
-  const [moveTargetParent, setMoveTargetParent] = useState<number | string>(0);
-  const [batchMoving, setBatchMoving] = useState(false);
+
+  const [state, setState] = useSetState({
+    dialogVisible: false,
+    editingRecord: null as CategoryItem | null,
+    parentId: null as number | string | null,
+    submitting: false,
+    isMobile: false,
+    expandedRowKeys: [] as (number | string)[],
+    dragRowId: null as number | string | null,
+    dropRowId: null as number | string | null,
+    dropPosition: null as 'before' | 'after' | null,
+    localDataSource: treeData as CategoryItem[],
+    hasSortChanges: false,
+    savingSort: false,
+    selectedRowKeys: [] as (number | string)[],
+    batchMoveVisible: false,
+    moveTargetParent: 0 as number | string,
+    batchMoving: false,
+  });
+  const {
+    dialogVisible,
+    editingRecord,
+    parentId,
+    submitting,
+    isMobile,
+    expandedRowKeys,
+    dragRowId,
+    dropRowId,
+    dropPosition,
+    localDataSource,
+    hasSortChanges,
+    savingSort,
+    selectedRowKeys,
+    batchMoveVisible,
+    moveTargetParent,
+    batchMoving,
+  } = state;
+
   //#endregion
 
   //#region 层级控制
@@ -324,7 +357,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   // 响应式
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setState({ isMobile: window.innerWidth < 768 });
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -332,14 +365,17 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   // 外部数据同步
   useEffect(() => {
-    setLocalDataSource(treeData);
-    setHasSortChanges(false);
+    setState({ localDataSource: treeData, hasSortChanges: false });
   }, [treeData]);
 
   // 默认展开（仅首次有数据时执行，后续刷新保持当前展开状态）
   const expandedInitialized = useRef(false);
   useEffect(() => {
-    if (defaultExpandAllRows && localDataSource.length > 0 && !expandedInitialized.current) {
+    if (
+      defaultExpandAllRows &&
+      localDataSource.length > 0 &&
+      !expandedInitialized.current
+    ) {
       expandedInitialized.current = true;
       const keys: (number | string)[] = [];
       const traverse = (items: CategoryItem[]) => {
@@ -351,21 +387,31 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         });
       };
       traverse(localDataSource);
-      setExpandedRowKeys(keys);
+      setState({ expandedRowKeys: keys });
     }
   }, [localDataSource, defaultExpandAllRows]);
 
-  const handleExpand = useCallback((expanded: boolean, record: CategoryItem) => {
-    setExpandedRowKeys((prev) =>
-      expanded ? [...prev, record.id] : prev.filter((k) => k !== record.id),
-    );
-  }, []);
+  const handleExpand = useCallback(
+    (expanded: boolean, record: CategoryItem) => {
+      setState((prev) =>
+        expanded
+          ? { ...prev, expandedRowKeys: [...prev.expandedRowKeys, record.id] }
+          : {
+              ...prev,
+              expandedRowKeys: prev.expandedRowKeys.filter(
+                (k) => k !== record.id,
+              ),
+            },
+      );
+    },
+    [],
+  );
 
   //#region 拖拽排序
   const handleDragStart = useCallback(
     (e: React.DragEvent, record: CategoryItem) => {
       if (!sortable) return;
-      setDragRowId(record.id);
+      setState({ dragRowId: record.id });
       e.dataTransfer.effectAllowed = 'move';
     },
     [sortable],
@@ -378,9 +424,12 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
       e.dataTransfer.dropEffect = 'move';
       const dragRow = findRecordById(localDataSource, dragRowId);
       if (!dragRow || dragRow.parent_id !== record.parent_id) return;
-      setDropRowId(record.id);
+      setState({ dropRowId: record.id });
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setDropPosition(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+      setState({
+        dropPosition:
+          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after',
+      });
     },
     [sortable, dragRowId, localDataSource],
   );
@@ -391,9 +440,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
       e.preventDefault();
       const dragRow = findRecordById(localDataSource, dragRowId);
       if (!dragRow || dragRow.parent_id !== record.parent_id) {
-        setDragRowId(null);
-        setDropRowId(null);
-        setDropPosition(null);
+        setState({ dragRowId: null, dropRowId: null, dropPosition: null });
         return;
       }
       const siblings = getSiblingsById(localDataSource, record.id);
@@ -403,56 +450,63 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
       const newSiblings = [...siblings];
       const [removed] = newSiblings.splice(dragIndex, 1);
       const insertIndex = dropPosition === 'before' ? dropIndex : dropIndex + 1;
-      newSiblings.splice(dragIndex < dropIndex ? insertIndex - 1 : insertIndex, 0, removed);
+      newSiblings.splice(
+        dragIndex < dropIndex ? insertIndex - 1 : insertIndex,
+        0,
+        removed,
+      );
       const updated = newSiblings.map((item, i) => ({ ...item, sort: i + 1 }));
-      setLocalDataSource(updateSiblingsInTree(localDataSource, record.parent_id ?? 0, updated));
-      setHasSortChanges(true);
-      setDragRowId(null);
-      setDropRowId(null);
-      setDropPosition(null);
+      setState({
+        localDataSource: updateSiblingsInTree(
+          localDataSource,
+          record.parent_id ?? 0,
+          updated,
+        ),
+        hasSortChanges: true,
+        dragRowId: null,
+        dropRowId: null,
+        dropPosition: null,
+      });
     },
     [sortable, dragRowId, dropPosition, localDataSource],
   );
 
   const handleDragEnd = useCallback(() => {
-    setDragRowId(null);
-    setDropRowId(null);
-    setDropPosition(null);
+    setState({ dragRowId: null, dropRowId: null, dropPosition: null });
   }, []);
 
   const handleSaveSort = async () => {
     if (!onSaveSort) return;
-    setSavingSort(true);
+    setState({ savingSort: true });
     try {
       // 内部树形数据转回扁平化，调用方始终处理扁平数据
       await onSaveSort(treeToFlat(localDataSource));
-      setHasSortChanges(false);
+      setState({ hasSortChanges: false });
       message.success('排序已保存');
     } catch {
       message.error('保存失败');
     } finally {
-      setSavingSort(false);
+      setState({ savingSort: false });
     }
   };
 
   const handleResetSort = () => {
-    setLocalDataSource(treeData);
-    setHasSortChanges(false);
+    setState({ localDataSource: treeData, hasSortChanges: false });
   };
   //#endregion
 
   //#region 弹窗操作
-  const openDialog = useCallback(() => setDialogVisible(true), []);
+  const openDialog = useCallback(() => setState({ dialogVisible: true }), []);
   const closeDialog = useCallback(() => {
-    setDialogVisible(false);
-    setEditingRecord(null);
-    setParentId(null);
+    setState({ dialogVisible: false });
+    setState({ editingRecord: null });
+    setState({ parentId: null });
     form.resetFields();
   }, [form]);
 
   const handleAdd = useCallback(() => {
-    setEditingRecord(null);
-    setParentId(null);
+    setState({ editingRecord: null });
+    setState({ parentId: null });
     form.resetFields();
     form.setFieldsValue({ sort: 1 });
     openDialog();
@@ -460,8 +514,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const handleAddChild = useCallback(
     (record: CategoryItem) => {
-      setEditingRecord(null);
-      setParentId(record.id);
+      setState({ editingRecord: null });
+      setState({ parentId: record.id });
       form.resetFields();
       form.setFieldsValue({ sort: 1 });
       openDialog();
@@ -471,8 +525,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const handleEdit = useCallback(
     (record: CategoryItem) => {
-      setEditingRecord(record);
-      setParentId(record.parent_id ?? null);
+      setState({ editingRecord: record });
+      setState({ parentId: record.parent_id ?? null });
       form.setFieldsValue(record);
       openDialog();
     },
@@ -482,7 +536,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   const handleSubmit = useCallback(async () => {
     try {
       const values = await form.validateFields();
-      setSubmitting(true);
+      setState({ submitting: true });
       if (editingRecord) {
         await onEdit?.(values, editingRecord);
         message.success('编辑成功');
@@ -495,7 +549,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     } catch (error: any) {
       if (!error?.errorFields) message.error(error?.message || '操作失败');
     } finally {
-      setSubmitting(false);
+      setState({ submitting: false });
     }
   }, [form, editingRecord, parentId, onAdd, onEdit, closeDialog, onRefresh]);
   //#endregion
@@ -504,16 +558,26 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) return;
     await onBatchDelete?.(selectedRowKeys);
-    setSelectedRowKeys([]);
+    setState({ selectedRowKeys: [] });
   };
 
   const parentOptions = useMemo(() => {
-    const options: { label: string; value: number | string; disabled?: boolean }[] = [];
+    const options: {
+      label: string;
+      value: number | string;
+      disabled?: boolean;
+    }[] = [];
     const disabledIds = new Set<number | string>();
-    const collectDisabled = (items: CategoryItem[], parentId: number | string) => {
+    const collectDisabled = (
+      items: CategoryItem[],
+      parentId: number | string,
+    ) => {
       if (selectedRowKeys.includes(parentId)) disabledIds.add(parentId);
       items.forEach((item) => {
-        if (selectedRowKeys.includes(item.id) || disabledIds.has(item.parent_id ?? 0)) {
+        if (
+          selectedRowKeys.includes(item.id) ||
+          disabledIds.has(item.parent_id ?? 0)
+        ) {
           disabledIds.add(item.id);
         }
         if (item.children?.length) collectDisabled(item.children, item.id);
@@ -537,7 +601,9 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         const overLevel = isOverLevel(item.id);
         const disabled = disabledIds.has(item.id) || overLevel;
         options.push({
-          label: `${'　'.repeat(level)}${level > 0 ? '└ ' : ''}${item.name}${overLevel ? '（超出最大层级）' : ''}`,
+          label: `${'　'.repeat(level)}${level > 0 ? '└ ' : ''}${item.name}${
+            overLevel ? '（超出最大层级）' : ''
+          }`,
           value: item.id,
           disabled,
         });
@@ -551,20 +617,22 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   const handleBatchMoveConfirm = async () => {
     if (selectedRowKeys.length === 0) return;
     // 二次校验：防止绕过下拉限制，移动后超过最大层级
-    if (!canMoveTo(localDataSource, selectedRowKeys, moveTargetParent, maxLevel)) {
+    if (
+      !canMoveTo(localDataSource, selectedRowKeys, moveTargetParent, maxLevel)
+    ) {
       message.error('移动后将超过最大分类层级');
       return;
     }
-    setBatchMoving(true);
+    setState({ batchMoving: true });
     try {
       await onBatchMove?.(selectedRowKeys, moveTargetParent);
       message.success(`已移动 ${selectedRowKeys.length} 项`);
-      setSelectedRowKeys([]);
-      setBatchMoveVisible(false);
+      setState({ selectedRowKeys: [] });
+      setState({ batchMoveVisible: false });
     } catch {
       message.error('移动失败');
     } finally {
-      setBatchMoving(false);
+      setState({ batchMoving: false });
     }
   };
   //#endregion
@@ -573,7 +641,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     if (!selectable) return undefined;
     return {
       selectedRowKeys,
-      onChange: (keys: React.Key[]) => setSelectedRowKeys(keys as (number | string)[]),
+      onChange: (keys: React.Key[]) =>
+        setState({ selectedRowKeys: keys as (number | string)[] }),
       columnWidth: 48,
     };
   }, [selectable, selectedRowKeys]);
@@ -598,7 +667,12 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
   const columns: ColumnsType<CategoryItem> = useMemo(() => {
     const base: ColumnsType<CategoryItem> = [
-      { title: nameColumnTitle, dataIndex: 'name', key: 'name', ellipsis: true },
+      {
+        title: nameColumnTitle,
+        dataIndex: 'name',
+        key: 'name',
+        ellipsis: true,
+      },
     ];
     if (columnDisplay.sort) {
       base.push({
@@ -631,12 +705,22 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         render: (_, record) => (
           <Space size={4}>
             {actions.addChild && canAddChild(record) && (
-              <Button type="link" size="small" icon={<PlusCircleOutlined />} onClick={() => handleAddChild(record)}>
+              <Button
+                type="link"
+                size="small"
+                icon={<PlusCircleOutlined />}
+                onClick={() => handleAddChild(record)}
+              >
                 {addChildButtonText}
               </Button>
             )}
             {actions.edit && (
-              <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+              >
                 {editButtonText}
               </Button>
             )}
@@ -648,7 +732,12 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                 okText="确定"
                 cancelText="取消"
               >
-                <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                >
                   {deleteButtonText}
                 </Button>
               </Popconfirm>
@@ -659,47 +748,89 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     }
     return base;
   }, [
-    nameColumnTitle, sortColumnTitle, statColumnTitle, actionColumnTitle,
-    columnDisplay, statField, autoGeneratedColumns, extraColumns, actions,
-    addChildButtonText, editButtonText, deleteButtonText,
-    handleAddChild, handleEdit, onDelete, canAddChild,
+    nameColumnTitle,
+    sortColumnTitle,
+    statColumnTitle,
+    actionColumnTitle,
+    columnDisplay,
+    statField,
+    autoGeneratedColumns,
+    extraColumns,
+    actions,
+    addChildButtonText,
+    editButtonText,
+    deleteButtonText,
+    handleAddChild,
+    handleEdit,
+    onDelete,
+    canAddChild,
   ]);
   //#endregion
 
   //#region 表单内容
-  const renderFormContent = useCallback(() => (
-    <Form form={form} layout="vertical" {...formProps}>
-      <Form.Item name="name" label={nameLabel} rules={[{ required: true, message: `请输入${nameLabel}` }]}>
-        <Input placeholder={`请输入${nameLabel}`} />
-      </Form.Item>
-      {columnDisplay.sort && (
-        <Form.Item name="sort" label="排序" initialValue={1}>
-          <InputNumber min={1} style={{ width: '100%' }} placeholder="数字越小越靠前" />
+  const renderFormContent = useCallback(
+    () => (
+      <Form form={form} layout="vertical" {...formProps}>
+        <Form.Item
+          name="name"
+          label={nameLabel}
+          rules={[{ required: true, message: `请输入${nameLabel}` }]}
+        >
+          <Input placeholder={`请输入${nameLabel}`} />
         </Form.Item>
-      )}
-      {extraFields.map((field) => {
-        if (!field.formType && !field.renderFormItem) return null;
-        return (
-          <Form.Item
-            key={field.name}
-            name={field.name}
-            label={field.label}
-            rules={field.rules || (field.required ? [{ required: true, message: `请输入${field.label}` }] : undefined)}
-          >
-            {/* 优先使用自定义表单组件（Form.Item 自动注入 value 和 onChange） */}
-            {field.renderFormItem ?? (
-              <>
-                {field.formType === 'input' && <Input placeholder={field.placeholder} />}
-                {field.formType === 'textarea' && <Input.TextArea rows={3} placeholder={field.placeholder} />}
-                {field.formType === 'inputNumber' && <InputNumber style={{ width: '100%' }} placeholder={field.placeholder} />}
-                {field.formType === 'select' && <Select options={field.options} placeholder={field.placeholder} />}
-              </>
-            )}
+        {columnDisplay.sort && (
+          <Form.Item name="sort" label="排序" initialValue={1}>
+            <InputNumber
+              min={1}
+              style={{ width: '100%' }}
+              placeholder="数字越小越靠前"
+            />
           </Form.Item>
-        );
-      })}
-    </Form>
-  ), [form, formProps, nameLabel, columnDisplay.sort, extraFields]);
+        )}
+        {extraFields.map((field) => {
+          if (!field.formType && !field.renderFormItem) return null;
+          return (
+            <Form.Item
+              key={field.name}
+              name={field.name}
+              label={field.label}
+              rules={
+                field.rules ||
+                (field.required
+                  ? [{ required: true, message: `请输入${field.label}` }]
+                  : undefined)
+              }
+            >
+              {/* 优先使用自定义表单组件（Form.Item 自动注入 value 和 onChange） */}
+              {field.renderFormItem ?? (
+                <>
+                  {field.formType === 'input' && (
+                    <Input placeholder={field.placeholder} />
+                  )}
+                  {field.formType === 'textarea' && (
+                    <Input.TextArea rows={3} placeholder={field.placeholder} />
+                  )}
+                  {field.formType === 'inputNumber' && (
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      placeholder={field.placeholder}
+                    />
+                  )}
+                  {field.formType === 'select' && (
+                    <Select
+                      options={field.options}
+                      placeholder={field.placeholder}
+                    />
+                  )}
+                </>
+              )}
+            </Form.Item>
+          );
+        })}
+      </Form>
+    ),
+    [form, formProps, nameLabel, columnDisplay.sort, extraFields],
+  );
   //#endregion
 
   const dialogTitle = editingRecord ? `编辑${modalTitle}` : `新增${modalTitle}`;
@@ -711,7 +842,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
           {selectable && selectedRowKeys.length > 0 && (
             <Space size="middle">
               <span className="cm-selected-count">
-                {selectedCountPrefix} <strong>{selectedRowKeys.length}</strong> {selectedCountSuffix}
+                {selectedCountPrefix} <strong>{selectedRowKeys.length}</strong>{' '}
+                {selectedCountSuffix}
               </span>
               {actions.delete && onBatchDelete && (
                 <Popconfirm
@@ -721,11 +853,19 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                   okText="确定"
                   cancelText="取消"
                 >
-                  <Button danger size="small" icon={<DeleteOutlined />}>{batchDeleteButtonText}</Button>
+                  <Button danger size="small" icon={<DeleteOutlined />}>
+                    {batchDeleteButtonText}
+                  </Button>
                 </Popconfirm>
               )}
               {onBatchMove && (
-                <Button size="small" onClick={() => { setMoveTargetParent(0); setBatchMoveVisible(true); }}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setState({ moveTargetParent: 0 });
+                    setState({ batchMoveVisible: true });
+                  }}
+                >
                   {batchMoveButtonText}
                 </Button>
               )}
@@ -735,7 +875,13 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         <div className="cm-toolbar-right">
           <Space size="small" wrap>
             {sortable && hasSortChanges && (
-              <Button size="small" icon={<ReloadOutlined />} onClick={handleResetSort}>{resetButtonText}</Button>
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={handleResetSort}
+              >
+                {resetButtonText}
+              </Button>
             )}
             {sortable && (
               <Button
@@ -749,7 +895,13 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
               </Button>
             )}
             {actions.add && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{addButtonText}</Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleAdd}
+              >
+                {addButtonText}
+              </Button>
             )}
           </Space>
         </div>
@@ -770,7 +922,11 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             // 有子分类且未达最大层级时才显示展开箭头
             const expandable = !!record.children?.length && canAddChild(record);
             if (!expandable) {
-              return <span style={{ display: 'inline-block', width: 24, height: 24 }} />;
+              return (
+                <span
+                  style={{ display: 'inline-block', width: 24, height: 24 }}
+                />
+              );
             }
             return (
               <span
@@ -800,9 +956,15 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
           className: [
             sortable ? 'drag-sort-row' : '',
             dragRowId === record.id ? 'row-dragging' : '',
-            dropRowId === record.id && dropPosition === 'before' ? 'drop-before' : '',
-            dropRowId === record.id && dropPosition === 'after' ? 'drop-after' : '',
-          ].filter(Boolean).join(' '),
+            dropRowId === record.id && dropPosition === 'before'
+              ? 'drop-before'
+              : '',
+            dropRowId === record.id && dropPosition === 'after'
+              ? 'drop-after'
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
         })}
         {...tableProps}
       />
@@ -826,7 +988,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         title={batchMoveModalTitle}
         open={batchMoveVisible}
         onOk={handleBatchMoveConfirm}
-        onCancel={() => setBatchMoveVisible(false)}
+        onCancel={() => setState({ batchMoveVisible: false })}
         confirmLoading={batchMoving}
         okText="确定移动"
         cancelText="取消"
@@ -837,7 +999,12 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
         </div>
         <Form layout="vertical">
           <Form.Item label="目标父分类">
-            <Select value={moveTargetParent} onChange={setMoveTargetParent} options={parentOptions} placeholder="选择目标分类" />
+            <Select
+              value={moveTargetParent}
+              onChange={(value) => setState({ moveTargetParent: value })}
+              options={parentOptions}
+              placeholder="选择目标分类"
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -854,7 +1021,13 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             <div style={{ textAlign: 'right' }}>
               <Space>
                 <Button onClick={closeDialog}>取消</Button>
-                <Button type="primary" loading={submitting} onClick={handleSubmit}>确定</Button>
+                <Button
+                  type="primary"
+                  loading={submitting}
+                  onClick={handleSubmit}
+                >
+                  确定
+                </Button>
               </Space>
             </div>
           }

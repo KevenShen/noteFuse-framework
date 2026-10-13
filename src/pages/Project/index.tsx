@@ -9,15 +9,11 @@ import {
   useClientLoaderSync,
   useMergedState,
   useShallowSelector,
-  useUpdateEffect,
 } from '@/hooks';
 import { getCategoryList, getProjectList } from '@/services';
-import {
-  extractListWithPagination,
-  extractResponseData,
-} from '@/utils/clientLoader';
+import { extractListWithPagination } from '@/utils/clientLoader';
 import { useClientLoaderData, useDispatch } from '@umijs/max';
-import { useSetState } from 'ahooks';
+import { useSetState, useUpdateEffect } from 'ahooks';
 import { Col, Row } from 'antd';
 import React from 'react';
 import { ProjectCardList, ProjectFilterBar, ProjectModal } from './components';
@@ -27,19 +23,26 @@ import type { ProjectItem } from './types';
 // ==================== clientLoader：页面渲染前并行预加载初始数据 ====================
 // 不传 user_id，后端从 token 解析当前用户（mock 环境兜底 user_id=1）
 export async function clientLoader() {
+  const EMPTY_DATA = {
+    projectCategoryList: [],
+    projectList: [],
+    projectTotal: 0,
+    projectPage: 1,
+  };
   try {
     const [categoriesRes, listRes] = await Promise.all([
       getCategoryList(),
       getProjectList({ page: 1, page_size: 12 }),
     ]);
 
-    // 使用统一的工具函数提取数据
-    const categoriesData = extractResponseData<any>(categoriesRes, []);
-    const projectCategoryList = Array.isArray(categoriesData)
-      ? categoriesData
-      : categoriesData.list || [];
-    const { list: projectList, total: projectTotal, page: projectPage } =
-      extractListWithPagination<ProjectItem>(listRes);
+    // 使用统一的工具函数提取数据（兼容直接数组与 { list } 两种结构）
+    const { list: projectCategoryList } =
+      extractListWithPagination<any>(categoriesRes);
+    const {
+      list: projectList,
+      total: projectTotal,
+      page: projectPage,
+    } = extractListWithPagination<ProjectItem>(listRes);
 
     return {
       projectCategoryList,
@@ -48,12 +51,7 @@ export async function clientLoader() {
       projectPage,
     };
   } catch (e) {
-    return {
-      projectCategoryList: [],
-      projectList: [],
-      projectTotal: 0,
-      projectPage: 1,
-    };
+    return EMPTY_DATA;
   }
 }
 
