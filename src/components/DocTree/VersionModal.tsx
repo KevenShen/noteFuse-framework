@@ -200,7 +200,7 @@ const VersionModal: React.FC<VersionModalProps> = ({
                 {docVersions.map((v) => (
                   <Option key={v.id} value={v.id}>
                     {v.version}
-                    {v.is_current && '（当前）'}
+                    {v.id === docInfo?.current_version_id && '（当前）'}
                     {v.status === 'draft' && ' - 草稿'}
                     {v.status === 'published' && ' - 已发布'}
                     {v.status === 'archived' && ' - 已归档'}

@@ -2,23 +2,20 @@
 // 文集服务层
 // 职责：处理文集相关的核心业务逻辑，调用数据库（MockTable）和缓存（Redis）
 
-import type { Request } from 'express';
 import { BusinessError } from '../../Core';
-import { getCurrentUserFromToken } from '../../Core/auth';
 import { redis } from '../../Core/redis';
-import type { MockProject } from '../../Entities/project';
+import type { MockProject, MongoProject } from '../../Entities/project';
 import {
   categoryChainCache,
   categoryMongoCollection,
   categoryOrderCache,
-  categoryProjectsCache,
-  projectCache,
   projectListCache,
   projectMongoCollection,
   projectTable,
 } from '../../Entities/project';
 import type {
   CreateProjectRequest,
+  DeleteProjectResponse,
   GetProjectListRequest,
   GetProjectListResponse,
   UpdateProjectRequest,
@@ -50,7 +47,6 @@ function parseProject(hash: Record<string, string>): MockProject {
     sort: Number(hash.sort),
     create_time: Number(hash.create_time),
     modify_time: Number(hash.modify_time),
-    doc_count: hash.doc_count !== undefined ? Number(hash.doc_count) : 0,
   };
 }
 function serializeProject(project: MockProject): Record<string, string> {
@@ -68,7 +64,6 @@ function serializeProject(project: MockProject): Record<string, string> {
     sort: String(project.sort),
     create_time: String(project.create_time),
     modify_time: String(project.modify_time),
-    doc_count: String(project.doc_count ?? 0),
   };
 }
 /**
@@ -152,13 +147,13 @@ async function getProjectIdsByCategory(categoryId: number): Promise<number[]> {
  */
 async function batchGetProjectInfo(
   projectIds: number[],
-): Promise<MockProject[]> {
+): Promise<MongoProject[]> {
   if (projectIds.length === 0) return [];
 
   const projects: Map<number, MockProject> = new Map();
   const missingIds: number[] = [];
 
-  // ========== 1. 批量从 Redis 缓存获取 ==========
+  // ========== 1. 批量从 Redis 详情缓存获取（不含 doc_count）==========
   try {
     const pipeline = redis.pipeline();
     for (const id of projectIds) {
@@ -188,21 +183,21 @@ async function batchGetProjectInfo(
         .find({ id: { $in: missingIds } })
         .toArray();
 
-      // 3. 查询结果写入 Redis 缓存（TTL 5 分钟）
+      // 查询结果写入 Redis 详情缓存（TTL 5 分钟，不含 doc_count）
       const writePipeline = redis.pipeline();
       for (const project of dbProjects) {
-        projects.set(project.id, project);
+        projects.set(project.id, project); // MongoProject 可赋值给 MockProject
         writePipeline.hmset(
           `project:info:${project.id}`,
           serializeProject(project),
         );
-        writePipeline.expire(`project:info:${project.id}`, 300); // 5 分钟
+        writePipeline.expire(`project:info:${project.id}`, 300);
       }
       await writePipeline.execAsync();
     } catch (error) {
       console.warn('[ProjectCache] 从 MongoDB 获取失败，降级到数据库:', error);
 
-      // 最后降级到数据库
+      // 最后降级到数据库（L1，不含 doc_count）
       for (const id of missingIds) {
         const project = await projectTable.findById(id);
         if (project) {
@@ -212,10 +207,63 @@ async function batchGetProjectInfo(
     }
   }
 
-  // ========== 4. 按输入顺序返回 ==========
+  // ========== 3. 批量从 projectStatsCache 获取统计字段（权威来源）==========
+  const statsPipeline = redis.pipeline();
+  for (const id of projectIds) {
+    statsPipeline.hgetAll(`project:stats:${id}`);
+  }
+  const statsResults = await statsPipeline.execAsync();
+
+  // ========== 4. 合并统计字段，按输入顺序返回 ==========
   return projectIds
-    .map((id) => projects.get(id))
-    .filter((p): p is MockProject => p !== undefined);
+    .map((id, index) => {
+      const project = projects.get(id);
+      if (!project) return null;
+      const stats = statsResults[index] as Record<string, string> | null;
+      return {
+        ...project,
+        doc_count: stats?.doc_count ? Number(stats.doc_count) : 0,
+        doc_category_count: stats?.doc_category_count
+          ? Number(stats.doc_category_count)
+          : 0,
+      };
+    })
+    .filter((p): p is MongoProject => p !== null);
+}
+
+/**
+ * 获取文集详情（三级降级：Redis 缓存 → MongoDB → 数据库表）
+ * 【返回】基础字段（不含 doc_count/doc_category_count 统计字段）
+ * 【用途】update/delete 等只需要基础字段的场景
+ * 【与 batchGetProjectInfo 区别】不获取统计字段，少一次 Redis 读取
+ */
+async function getProjectById(id: number): Promise<MockProject | null> {
+  // L3：Redis 详情缓存
+  try {
+    const cacheData = await redis.hgetAll(`project:info:${id}`);
+    if (cacheData && Object.keys(cacheData).length > 0) {
+      return parseProject(cacheData);
+    }
+  } catch (error) {
+    console.warn('[ProjectCache] Redis 获取失败，降级到 MongoDB:', error);
+  }
+
+  // L2：MongoDB（命中后回写 Redis 缓存）
+  try {
+    const mongoProject = await projectMongoCollection.findOne({ id });
+    if (mongoProject) {
+      const writePipeline = redis.pipeline();
+      writePipeline.hmset(`project:info:${id}`, serializeProject(mongoProject));
+      writePipeline.expire(`project:info:${id}`, 300);
+      await writePipeline.execAsync();
+      return mongoProject; // MongoProject 可赋值给 MockProject
+    }
+  } catch (error) {
+    console.warn('[ProjectCache] MongoDB 获取失败，降级到数据库:', error);
+  }
+
+  // L1：数据库表（兜底）
+  return (await projectTable.findById(id)) ?? null;
 }
 
 /**
@@ -515,44 +563,18 @@ class ProjectService {
     };
   }
 
-  // ==================== 文集详情 ====================
-
-  /**
-   * 获取文集详情（多级缓存降级）
-   *
-   * 【读取优先级】Redis（L3）→ MongoDB（L2）→ 数据库（L1）
-   * 【缓存策略】Cache-Aside 模式，未命中时从下层获取并写入上层缓存
-   *
-   * @param id 文集 ID
-   * @returns 文集详情
-   */
-  async getProjectDetail(id: number): Promise<MockProject> {
-    // 复用批量获取函数（传入单元素数组），自动实现 Redis → MongoDB → 数据库降级
-    const projects = await batchGetProjectInfo([id]);
-    const project = projects[0];
-
-    if (!project) {
-      throw new BusinessError('文集不存在', 404);
-    }
-    return project;
-  }
-
   // ==================== 创建文集 ====================
 
   /**
    * 创建文集
    * @param data 请求参数
-   * @param req HTTP 请求（用于获取当前用户）
+   * @param createUserId 创建者用户 ID
    * @returns 创建的文集
    */
   async createProject(
     data: CreateProjectRequest,
-    req?: Request,
-  ): Promise<MockProject> {
-    // 从 token 获取当前用户（未传 req 时默认用户 ID 为 1）
-    const currentUser = req ? getCurrentUserFromToken(req) : null;
-    const createUserId = currentUser?.id ?? 1;
-
+    createUserId: number = 1,
+  ): Promise<MongoProject> {
     // create_time / modify_time 由 beforeCreate 钩子自动设置
     const newProject = await projectTable.create({
       name: data.name,
@@ -569,29 +591,39 @@ class ProjectService {
 
     // ========== 缓存和 MongoDB 同步更新（并行执行 + 错误兜底）==========
     try {
-      const promises: any[] = [];
-
-      // 1. 分类文集 ID 缓存（Set）
+      // 1. Redis 操作合并到 Pipeline（减少网络往返）
+      const redisPipeline = redis.pipeline();
+      // 1.1 分类文集 ID 缓存（Set）
       if (newProject.project_category_id) {
-        promises.push(
-          categoryProjectsCache.sadd(
-            String(newProject.project_category_id),
-            newProject.id,
-          ),
+        redisPipeline.sadd(
+          `project:category:projects:${newProject.project_category_id}`,
+          newProject.id,
         );
       }
-
-      // 2. 文集详情缓存（Hash，TTL 5 分钟）
-      promises.push(
-        projectCache.hmset(String(newProject.id), serializeProject(newProject)),
+      // 1.2 文集详情缓存（Hash + TTL 5 分钟，不含 doc_count）
+      redisPipeline.hmset(
+        `project:info:${newProject.id}`,
+        serializeProject(newProject),
       );
+      redisPipeline.expire(`project:info:${newProject.id}`, 300);
+      // 1.3 文集统计缓存（Hash，doc_count/doc_category_count 初始为 0）
+      redisPipeline.hmset(`project:stats:${newProject.id}`, {
+        doc_count: '0',
+        doc_category_count: '0',
+      });
 
-      // 3. MongoDB 文集集合
-      promises.push(projectMongoCollection.insertOne(newProject));
-
-      // 4. MongoDB 分类计数器（+1）
+      // 2. MongoDB 操作（Promise.all 并行）
+      const mongoPromises: Promise<any>[] = [
+        // 2.1 文集集合
+        projectMongoCollection.insertOne({
+          ...newProject,
+          doc_count: 0,
+          doc_category_count: 0,
+        }),
+      ];
+      // 2.2 分类计数器（+1）
       if (newProject.project_category_id) {
-        promises.push(
+        mongoPromises.push(
           categoryMongoCollection.updateOne(
             { id: newProject.project_category_id },
             { $inc: { project_count: 1 } },
@@ -599,22 +631,26 @@ class ProjectService {
         );
       }
 
-      // 并行执行所有写入
-      await Promise.all(promises);
-
-      // 5. 精确失效列表缓存（新增时所有排序都受影响）
-      await invalidateProjectListCache(newProject);
-
-      // 6. 更新分类计数器（祖先链，同步操作）
+      // 3. 并行执行：Redis Pipeline + MongoDB + 分类计数器（祖先链）
+      const allPromises: Promise<any>[] = [
+        redisPipeline.execAsync(),
+        ...mongoPromises,
+      ];
       if (newProject.project_category_id) {
-        await updateCategoryCount(newProject.project_category_id, 1);
+        allPromises.push(
+          updateCategoryCount(newProject.project_category_id, 1),
+        );
       }
+      await Promise.all(allPromises);
+
+      // 4. 精确失效列表缓存（新增时所有排序都受影响）
+      await invalidateProjectListCache(newProject);
     } catch (error) {
       // 缓存更新失败不影响主流程，等待定时重建兜底
       console.warn('[ProjectCache] 创建文集缓存更新失败，等待定时重建:', error);
     }
 
-    return newProject;
+    return { ...newProject, doc_count: 0, doc_category_count: 0 };
   }
 
   // ==================== 更新文集 ====================
@@ -628,8 +664,8 @@ class ProjectService {
   async updateProject(
     id: number,
     data: UpdateProjectRequest,
-  ): Promise<MockProject> {
-    const oldProject = await projectTable.findById(id);
+  ): Promise<MongoProject> {
+    const oldProject = await getProjectById(id);
     if (!oldProject) {
       throw new BusinessError('文集不存在', 404);
     }
@@ -665,25 +701,38 @@ class ProjectService {
 
     // ========== 缓存和 MongoDB 同步更新（并行执行 + 错误兜底）==========
     try {
-      const promises: any[] = [];
       const newCategoryId = updatedProject!.project_category_id;
 
-      // 1. 分类变更时，更新分类文集 ID 缓存和计数器
+      // 1. Redis 操作合并到 Pipeline（减少网络往返）
+      const redisPipeline = redis.pipeline();
+      // 1.1 分类变更时，更新分类文集 ID 缓存（Set）
       if (newCategoryId !== oldCategoryId) {
-        // 旧分类：移除文集 ID
         if (oldCategoryId) {
-          promises.push(categoryProjectsCache.srem(String(oldCategoryId), id));
-          promises.push(
+          redisPipeline.srem(`project:category:projects:${oldCategoryId}`, id);
+        }
+        if (newCategoryId) {
+          redisPipeline.sadd(`project:category:projects:${newCategoryId}`, id);
+        }
+      }
+      // 1.2 删除文集详情缓存（下次读取时重建）
+      redisPipeline.del(`project:info:${id}`);
+
+      // 2. MongoDB 操作（Promise.all 并行）
+      const mongoPromises: Promise<any>[] = [
+        projectMongoCollection.updateOne({ id }, { $set: updateData }),
+      ];
+      // 分类变更时，更新分类计数器
+      if (newCategoryId !== oldCategoryId) {
+        if (oldCategoryId) {
+          mongoPromises.push(
             categoryMongoCollection.updateOne(
               { id: oldCategoryId },
               { $inc: { project_count: -1 } },
             ),
           );
         }
-        // 新分类：添加文集 ID
         if (newCategoryId) {
-          promises.push(categoryProjectsCache.sadd(String(newCategoryId), id));
-          promises.push(
+          mongoPromises.push(
             categoryMongoCollection.updateOne(
               { id: newCategoryId },
               { $inc: { project_count: 1 } },
@@ -692,36 +741,40 @@ class ProjectService {
         }
       }
 
-      // 2. 删除文集详情缓存（下次读取时重建）
-      promises.push(projectCache.del(String(id)));
-
-      // 3. 更新 MongoDB 文集集合
-      if (Object.keys(updateData).length > 0) {
-        promises.push(
-          projectMongoCollection.updateOne({ id }, { $set: updateData }),
-        );
+      // 3. 并行执行：Redis Pipeline + MongoDB + 分类计数器（祖先链）
+      const allPromises: Promise<any>[] = [
+        redisPipeline.execAsync(),
+        ...mongoPromises,
+      ];
+      if (newCategoryId !== oldCategoryId) {
+        if (oldCategoryId) {
+          allPromises.push(updateCategoryCount(oldCategoryId, -1));
+        }
+        if (newCategoryId) {
+          allPromises.push(updateCategoryCount(newCategoryId, 1));
+        }
       }
-
-      // 并行执行所有写入
-      await Promise.all(promises);
+      await Promise.all(allPromises);
 
       // 4. 精确失效列表缓存（旧分类 + 新分类）
       await invalidateProjectListCache(oldProject, changedFields);
       if (newCategoryId !== oldCategoryId) {
         await invalidateProjectListCache(updatedProject!, changedFields);
       }
-
-      // 5. 更新分类计数器（祖先链，同步操作）
-      if (newCategoryId !== oldCategoryId) {
-        if (oldCategoryId) await updateCategoryCount(oldCategoryId, -1);
-        if (newCategoryId) await updateCategoryCount(newCategoryId, 1);
-      }
     } catch (error) {
       // 缓存更新失败不影响主流程，等待定时重建兜底
       console.warn('[ProjectCache] 更新文集缓存失败，等待定时重建:', error);
     }
 
-    return updatedProject!;
+    // 返回完整的 MongoProject（含统计字段，详情缓存已删除，会从 MongoDB 重建）
+    const fullProject = (await batchGetProjectInfo([id]))[0];
+    return (
+      fullProject ?? {
+        ...updatedProject!,
+        doc_count: 0,
+        doc_category_count: 0,
+      }
+    );
   }
 
   // ==================== 删除文集 ====================
@@ -730,8 +783,8 @@ class ProjectService {
    * 删除文集
    * @param id 文集 ID
    */
-  async deleteProject(id: number): Promise<null> {
-    const project = await projectTable.findById(id);
+  async deleteProject(id: number): Promise<DeleteProjectResponse> {
+    const project = await getProjectById(id);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
@@ -742,22 +795,24 @@ class ProjectService {
 
     // ========== 缓存和 MongoDB 同步更新（并行执行 + 错误兜底）==========
     try {
-      const promises: any[] = [];
-
-      // 1. 分类文集 ID 缓存（Set）
+      // 1. Redis 操作合并到 Pipeline（减少网络往返）
+      const redisPipeline = redis.pipeline();
+      // 1.1 分类文集 ID 缓存（Set）：移除
       if (categoryId) {
-        promises.push(categoryProjectsCache.srem(String(categoryId), id));
+        redisPipeline.srem(`project:category:projects:${categoryId}`, id);
       }
+      // 1.2 文集详情缓存：删除
+      redisPipeline.del(`project:info:${id}`);
+      // 1.3 文集统计缓存：删除
+      redisPipeline.del(`project:stats:${id}`);
 
-      // 2. 文集详情缓存
-      promises.push(projectCache.del(String(id)));
-
-      // 3. MongoDB 文集集合
-      promises.push(projectMongoCollection.deleteOne({ id }));
-
-      // 4. MongoDB 分类计数器（-1）
+      // 2. MongoDB 操作（Promise.all 并行）
+      const mongoPromises: Promise<any>[] = [
+        projectMongoCollection.deleteOne({ id }),
+      ];
+      // 分类计数器（-1）
       if (categoryId) {
-        promises.push(
+        mongoPromises.push(
           categoryMongoCollection.updateOne(
             { id: categoryId },
             { $inc: { project_count: -1 } },
@@ -765,22 +820,24 @@ class ProjectService {
         );
       }
 
-      // 并行执行所有写入
-      await Promise.all(promises);
-
-      // 5. 精确失效列表缓存（删除时所有排序都受影响）
-      await invalidateProjectListCache(project);
-
-      // 6. 更新分类计数器（祖先链，同步操作）
+      // 3. 并行执行：Redis Pipeline + MongoDB + 分类计数器（祖先链）
+      const allPromises: Promise<any>[] = [
+        redisPipeline.execAsync(),
+        ...mongoPromises,
+      ];
       if (categoryId) {
-        await updateCategoryCount(categoryId, -1);
+        allPromises.push(updateCategoryCount(categoryId, -1));
       }
+      await Promise.all(allPromises);
+
+      // 4. 精确失效列表缓存（删除时所有排序都受影响）
+      await invalidateProjectListCache(project);
     } catch (error) {
       // 缓存更新失败不影响主流程，等待定时重建兜底
       console.warn('[ProjectCache] 删除文集缓存失败，等待定时重建:', error);
     }
 
-    return null;
+    return { deletedId: id };
   }
 }
 

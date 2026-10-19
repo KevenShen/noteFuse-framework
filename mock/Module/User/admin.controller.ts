@@ -51,7 +51,6 @@ class AdminController {
       res,
       () => adminService.getAdminUserDetail(userId),
       undefined,
-      404,
     );
   }
 
@@ -79,7 +78,6 @@ class AdminController {
       res,
       () => adminService.adminUpdateUser(userId, data),
       '更新成功',
-      404,
     );
   }
 
@@ -94,7 +92,6 @@ class AdminController {
       res,
       () => adminService.adminDeleteUser(userId, currentUser.id),
       '删除成功',
-      404,
     );
   }
 }

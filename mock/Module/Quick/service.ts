@@ -57,10 +57,10 @@ import type {
  * 【注意】
  * 这里使用 require 动态导入，避免循环依赖问题
  */
-const getCurrentUserId = (req?: any): number => {
+const getCurrentUserId = async (req?: any): Promise<number> => {
   try {
-    const { getCurrentUserFromToken } = require('../User/service');
-    const user = getCurrentUserFromToken(req);
+    const { getCurrentUserFromToken } = require('../../Core/auth');
+    const user = await getCurrentUserFromToken(req);
     return user?.id || 1;
   } catch (error) {
     return 1;

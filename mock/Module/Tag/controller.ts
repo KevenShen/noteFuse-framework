@@ -110,7 +110,6 @@ class TagController {
       res,
       () => tagService.updateTagCategory(id, data),
       '分类更新成功',
-      404,
     );
   }
 
@@ -125,7 +124,6 @@ class TagController {
       res,
       () => tagService.deleteTagCategory(id),
       '分类删除成功',
-      404,
     );
   }
 
@@ -141,7 +139,6 @@ class TagController {
       res,
       () => tagService.sortTagCategory(id, data),
       '排序更新成功',
-      404,
     );
   }
 
@@ -173,7 +170,6 @@ class TagController {
       res,
       () => tagService.updateTag(id, data),
       '标签更新成功',
-      404,
     );
   }
 
@@ -188,7 +184,6 @@ class TagController {
       res,
       () => tagService.deleteTag(id),
       '标签删除成功',
-      404,
     );
   }
 
@@ -251,7 +246,6 @@ class TagController {
       res,
       () => tagService.removeDocTag(docId, tagId),
       '标签移除成功',
-      404,
     );
   }
 }

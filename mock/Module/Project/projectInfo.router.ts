@@ -14,6 +14,12 @@ import {
 // ==================== 文集详情页子资源 API 路由定义 ====================
 
 export default {
+  // ---------- 文集详情 ----------
+
+  /** 获取文集详情 */
+  'GET /api/project/:id(\\d+)': (req: Request, res: Response) =>
+    projectInfoController.getProjectDetail(req, res),
+
   // ---------- 文档分类 ----------
 
   /** 获取文集下的文档分类列表 */

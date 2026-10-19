@@ -55,14 +55,17 @@ const LatestDocsTab: React.FC<LatestDocsTabProps> = ({ onSelectDoc }) => {
               title={
                 <div className="latest-doc-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>{doc.name}</span>
-                  {doc.versions?.find((v: any) => v.is_current) && (
-                    <Tag
-                      color={doc.versions.find((v: any) => v.is_current)?.status === 'draft' ? 'orange' : 'blue'}
-                      style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px', margin: 0 }}
-                    >
-                      {doc.versions.find((v: any) => v.is_current)?.version}
-                    </Tag>
-                  )}
+                  {(() => {
+                    const curVer = doc.versions?.find((v: any) => v.id === doc.current_version_id);
+                    return curVer ? (
+                      <Tag
+                        color={curVer.status === 'draft' ? 'orange' : 'blue'}
+                        style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px', margin: 0 }}
+                      >
+                        {curVer.version}
+                      </Tag>
+                    ) : null;
+                  })()}
                 </div>
               }
               description={

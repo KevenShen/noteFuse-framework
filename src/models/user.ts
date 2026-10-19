@@ -12,6 +12,7 @@ import {
   saveEditorSettings,
   updateProfile,
 } from '@/services/user';
+import { history } from '@umijs/max';
 import { message } from 'antd';
 
 // ==================== 类型定义 ====================
@@ -111,12 +112,12 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(updateProfile, payload);
-        if (!res.success) {
-          message.error(res.message || '更新失败');
+        if (!res?.success) {
+          message.error(res?.message || '更新失败');
           return null;
         }
         // 更新成功后，更新本地 state
-        yield put({ type: 'saveCurrentUser', payload: res.data });
+        yield put({ type: 'saveCurrentUser', payload: res?.data });
         message.success('个人资料更新成功');
         return res;
       } catch (error) {
@@ -129,6 +130,7 @@ export default {
 
     /**
      * 修改密码（登录状态下）
+     * 成功后清除 token 并跳转登录页（密码变更后需重新登录）
      */
     *handleChangePassword(
       { payload }: { payload: ChangePasswordParams },
@@ -137,11 +139,14 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(changePassword, payload);
-        if (!res.success) {
-          message.error(res.message || '修改失败');
+        if (!res?.success) {
+          message.error(res?.message || '修改失败');
           return null;
         }
         message.success('密码修改成功');
+        // 清除 token 并跳转登录页（硬跳转确保状态重置）
+        localStorage.removeItem('note_fuse_token');
+        history.push('/login');
         return res;
       } catch (error) {
         console.error('[UserModel] handleChangePassword 失败:', error);
@@ -158,9 +163,10 @@ export default {
     *fetchEditorSettings(_: any, { call, put }: any): Generator<any, any, any> {
       try {
         const res = yield call(getEditorSettings);
-        if (res.success) {
-          yield put({ type: 'updateEditorSettings', payload: res.data });
+        if (!res?.success) {
+          return res;
         }
+        yield put({ type: 'updateEditorSettings', payload: res?.data });
         return res;
       } catch (error) {
         // 获取失败不阻断页面，使用默认值
@@ -180,12 +186,12 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(saveEditorSettings, payload);
-        if (!res.success) {
-          message.error(res.message || '保存失败');
+        if (!res?.success) {
+          message.error(res?.message || '保存失败');
           return null;
         }
         // 保存成功后，更新 currentUser 中的对应字段
-        yield put({ type: 'updateEditorSettings', payload: res.data });
+        yield put({ type: 'updateEditorSettings', payload: res?.data });
         message.success('编辑器设置保存成功');
         return res;
       } catch (error) {

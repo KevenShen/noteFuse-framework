@@ -2,6 +2,9 @@
 // 文集详情页子资源请求参数校验规则
 // 功能：校验文集详情页子资源相关接口请求参数是否符合要求
 
+import { BusinessError } from '../../Core/common';
+import { CommonErrorCodes } from '../../Core/errorCodes';
+
 import type {
   SaveAiOutlineRequest,
   UpdateProjectIntroRequest,
@@ -12,32 +15,32 @@ import type {
 /**
  * 校验保存文集的 AI 总结大纲请求
  * @param data 请求参数
- * @returns 错误信息（null 表示校验通过）
+ * @throws BusinessError 校验失败时抛出
  */
 export function validateSaveAiOutlineRequest(
   data: SaveAiOutlineRequest,
-): string | null {
+): void {
   // 1. 必填校验
   if (data.summary === undefined || data.summary === null) {
-    return '大纲摘要不能为空';
+    throw new BusinessError('大纲摘要不能为空', CommonErrorCodes.VALIDATION_FAILED);
   }
 
   if (data.chapters === undefined || data.chapters === null) {
-    return '大纲章节列表不能为空';
+    throw new BusinessError('大纲章节列表不能为空', CommonErrorCodes.VALIDATION_FAILED);
   }
 
   // 2. 摘要长度校验
   if (data.summary.length > 2000) {
-    return '大纲摘要长度不能超过2000个字符';
+    throw new BusinessError('大纲摘要长度不能超过2000个字符', CommonErrorCodes.VALIDATION_FAILED);
   }
 
   // 3. 章节列表校验
   if (!Array.isArray(data.chapters)) {
-    return '大纲章节列表必须是数组';
+    throw new BusinessError('大纲章节列表必须是数组', CommonErrorCodes.VALIDATION_FAILED);
   }
 
   if (data.chapters.length > 100) {
-    return '大纲章节数量不能超过100个';
+    throw new BusinessError('大纲章节数量不能超过100个', CommonErrorCodes.VALIDATION_FAILED);
   }
 
   // 4. 每个章节的有效性校验
@@ -57,7 +60,6 @@ export function validateSaveAiOutlineRequest(
     }
   }
 
-  return null;
 }
 
 // ==================== 文集简介相关校验 ====================
@@ -65,15 +67,14 @@ export function validateSaveAiOutlineRequest(
 /**
  * 校验更新文集简介请求
  * @param data 请求参数
- * @returns 错误信息（null 表示校验通过）
+ * @throws BusinessError 校验失败时抛出
  */
 export function validateUpdateProjectIntroRequest(
   data: UpdateProjectIntroRequest,
-): string | null {
+): void {
   // 1. 必填校验
   if (data.intro === undefined || data.intro === null) {
-    return '文集简介不能为空';
+    throw new BusinessError('文集简介不能为空', CommonErrorCodes.VALIDATION_FAILED);
   }
 
-  return null;
 }

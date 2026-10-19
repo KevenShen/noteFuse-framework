@@ -23,7 +23,8 @@ const PasswordForm: React.FC = () => {
   const loading = useShallowSelector((state: any) => state.user.loading);
 
   // 修改密码
-  // 成功/失败提示由 model 统一处理，页面组件根据返回值判断是否成功，成功后执行业务逻辑
+  // 成功/失败提示、清除 token、跳转登录页由 model 统一处理
+  // 组件只负责 UI 操作：重置表单
   const handleChangePassword = async (values: ChangePasswordParams) => {
     const result = await dispatch({
       type: 'user/handleChangePassword',
@@ -31,9 +32,6 @@ const PasswordForm: React.FC = () => {
     });
     if (result) {
       form.resetFields();
-      // 修改密码成功后，清除 token 并跳转到登录页（硬跳转确保状态重置）
-      localStorage.removeItem('note_fuse_token');
-      window.location.href = '/login';
     }
   };
 

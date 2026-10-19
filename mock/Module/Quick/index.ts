@@ -90,7 +90,6 @@ export default {
   'GET /api/quick/items': withMiddleware(
     {
       validate: validateGetQuickItemsRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => quickController.getQuickItems(req, res),
   ),

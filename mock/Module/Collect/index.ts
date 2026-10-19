@@ -43,7 +43,6 @@ export default {
   'GET /api/collect/groups': withMiddleware(
     {
       validate: validateGetCollectGroupsRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => collectController.getCollectGroups(req, res),
   ),
@@ -85,7 +84,6 @@ export default {
   'GET /api/collect': withMiddleware(
     {
       validate: validateGetCollectListRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => collectController.getCollectList(req, res),
   ),
@@ -125,7 +123,6 @@ export default {
   'GET /api/collect/check': withMiddleware(
     {
       validate: validateCheckCollectedRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => collectController.checkCollected(req, res),
   ),

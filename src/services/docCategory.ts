@@ -18,6 +18,21 @@ export async function getProjectDocCategories(
   );
 }
 
+/** 按文集 ID 获取文档分类列表（路径参数版，避免与 /api/doc/categories 路由冲突） */
+export async function getDocCategoriesByProjectId(
+  params: { projectId: number },
+  options?: { [key: string]: any },
+) {
+  const { projectId } = params;
+  return request<{ data: DocCategory[]; success: boolean }>(
+    `/api/doc/categories/${projectId}`,
+    {
+      method: 'GET',
+      ...(options || {}),
+    },
+  );
+}
+
 /** 获取所有文档分类列表（跨文集，带文档数量） */
 export async function getDocCategoryList(
   params?: { project_id?: number; keyword?: string },

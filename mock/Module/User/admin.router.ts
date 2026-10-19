@@ -24,7 +24,6 @@ export default {
     {
       admin: true,
       validate: validateAdminGetUserListRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => adminController.getAdminUserList(req, res),
   ),

@@ -4,13 +4,16 @@
 import DocTree from '@/components/DocTree';
 import TagManager from '@/components/TagManager';
 import type { TagItem } from '@/components/TagManager/types';
-import type { DocVersion } from '@/components/DocTree/types';
+import type {
+  DocVersion,
+  ManageActionType,
+} from '@/components/DocTree/types';
 import { useShallowSelector } from '@/hooks';
 import { fetchTags } from '@/services';
 import { FolderOpenOutlined, TagsOutlined } from '@ant-design/icons';
-import { history } from '@umijs/max';
+import { history, useDispatch } from '@umijs/max';
 import { Tag } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidebarActiveKey } from '../types';
 
 interface DocSidebarProps {
@@ -27,6 +30,7 @@ const DocSidebar: React.FC<DocSidebarProps> = ({
   projectId,
   onSelectDoc,
 }) => {
+  const dispatch = useDispatch();
   // 自行从 model 获取所需数据
   const { categories, docs, docVersions } = useShallowSelector((state: any) => ({
     categories: state.docCategory.docCategoryList,
@@ -77,8 +81,8 @@ const DocSidebar: React.FC<DocSidebarProps> = ({
       const versions = (docVersions || [])
         .filter((v: any) => v.doc_id === doc.id)
         .sort((a: any, b: any) => {
-          if (a.is_current && !b.is_current) return -1;
-          if (!a.is_current && b.is_current) return 1;
+          if (a.id === doc.current_version_id && b.id !== doc.current_version_id) return -1;
+          if (a.id !== doc.current_version_id && b.id === doc.current_version_id) return 1;
           return new Date(b.update_time).getTime() - new Date(a.update_time).getTime();
         });
       return {
@@ -110,6 +114,82 @@ const DocSidebar: React.FC<DocSidebarProps> = ({
     history.push(`/doc/${docId}?project_id=${projectId}&version=${version.id}`);
   };
 
+  // ==================== 管理分类（组件自治） ====================
+  const handleManageCategory = useCallback(
+    async (action: ManageActionType, data?: any) => {
+      switch (action) {
+        case 'add-category':
+          await dispatch({
+            type: 'docCategory/handleCreateDocCategory',
+            payload: { ...data, project_id: projectId },
+          });
+          break;
+        case 'edit-category':
+          await dispatch({
+            type: 'docCategory/handleUpdateDocCategory',
+            payload: { id: data.id, data },
+          });
+          break;
+        case 'delete-category':
+          await dispatch({
+            type: 'docCategory/handleDeleteDocCategory',
+            payload: data.id,
+          });
+          break;
+        default:
+          break;
+      }
+    },
+    [dispatch, projectId],
+  );
+
+  // ==================== 管理文档（组件自治） ====================
+  const handleManageDoc = useCallback(
+    async (action: ManageActionType, data?: any) => {
+      switch (action) {
+        case 'add-doc': {
+          const newDoc = await dispatch({
+            type: 'docList/handleCreateDoc',
+            payload: { ...data, project_id: projectId },
+          });
+          if (newDoc?.id) {
+            history.push(`/docEdit/${newDoc.id}?project_id=${projectId}`);
+          }
+          break;
+        }
+        case 'edit-doc':
+          await dispatch({
+            type: 'docList/handleUpdateDoc',
+            payload: { id: data.id, data },
+          });
+          break;
+        case 'delete-doc': {
+          const deletedId = data.id;
+          await dispatch({
+            type: 'docList/handleDeleteDoc',
+            payload: deletedId,
+          });
+          if (deletedId === currentDocId) {
+            history.push(`/projectDetail/${projectId}`);
+          }
+          break;
+        }
+        case 'move-doc':
+          await dispatch({
+            type: 'docList/handleUpdateDoc',
+            payload: {
+              id: data.id,
+              data: { doc_category_id: data.category_id },
+            },
+          });
+          break;
+        default:
+          break;
+      }
+    },
+    [dispatch, projectId, currentDocId],
+  );
+
   return (
     <div className="editor-sidebar">
       <div className="custom-accordion">
@@ -134,16 +214,19 @@ const DocSidebar: React.FC<DocSidebarProps> = ({
                   <DocTree
                     categories={categories || []}
                     docs={docsWithVersions}
+                    projectId={projectId}
                     selectedKeys={currentDocId ? [String(currentDocId)] : []}
                     selectedVersionKey={
                       currentVersionId ? `version-${currentVersionId}` : undefined
                     }
                     onSelect={handleSelect}
-                    showManage={false}
+                    showManage={true}
                     searchPlaceholder="搜索文档..."
                     enableVersion={true}
                     defaultExpandVersion={true}
                     onSelectVersion={handleSelectVersion}
+                    onManageCategory={handleManageCategory}
+                    onManageDoc={handleManageDoc}
                   />
                 </div>
               </div>

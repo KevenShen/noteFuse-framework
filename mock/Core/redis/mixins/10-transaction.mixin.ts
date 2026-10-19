@@ -106,7 +106,10 @@ export function WithTransaction<T extends MixinConstructor>(Base: T) {
         case 'decrBy': return this.decrBy(args[0], args[1]);
         case 'expire': return this.expire(args[0], args[1]);
         case 'ttl': return this.ttl(args[0]);
-        case 'hset': return this.hset(args[0], args[1], args[2]);
+        case 'hset':
+          return typeof args[1] === 'object'
+            ? this.hset(args[0], args[1])
+            : this.hset(args[0], args[1], args[2]);
         case 'hget': return this.hget(args[0], args[1]);
         case 'hgetAll': return this.hgetAll(args[0]);
         case 'hdel': return this.hdel(args[0], args[1]);

@@ -10,7 +10,7 @@ import {
 import ProjectDocDetailLayout from '@/layouts/ProjectDocDetailLayout';
 import {
   getAiOutline,
-  getProjectDocCategories,
+  getDocCategoriesByProjectId,
   getProjectDetail,
   getProjectDocVersions,
   getProjectDocs,
@@ -23,9 +23,9 @@ import {
   FolderOpenOutlined,
   RobotOutlined,
 } from '@ant-design/icons';
-import { history, useClientLoaderData } from '@umijs/max';
+import { history, useClientLoaderData, useDispatch, useLocation } from '@umijs/max';
 import { Col, Divider, Row, Tabs, Tag } from 'antd';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   AiOutlineTab,
   DocSidebar,
@@ -46,24 +46,40 @@ export async function clientLoader() {
     docVersions: [],
     aiOutline: null,
   };
-  const projectId = Number(history.location.pathname.split('/').pop() || 0);
+  const projectId = Number(window.location.pathname.split('/').pop() || 0);
   if (!projectId) return EMPTY_DATA;
 
   try {
+    // 使用 Promise.allSettled：单个接口失败不影响其他数据
     const [projectRes, categoriesRes, docsRes, versionsRes, outlineRes] =
-      await Promise.all([
+      await Promise.allSettled([
         getProjectDetail({ id: projectId }),
-        getProjectDocCategories({ id: projectId }),
+        getDocCategoriesByProjectId({ projectId }),
         getProjectDocs({ id: projectId }),
         getProjectDocVersions({ id: projectId }),
         getAiOutline({ id: projectId }),
       ]);
     return {
-      currentProject: extractResponseData(projectRes, null),
-      docCategoryList: extractResponseData<any[]>(categoriesRes, []),
-      docList: extractResponseData<any[]>(docsRes, []),
-      docVersions: extractResponseData<any[]>(versionsRes, []),
-      aiOutline: extractResponseData(outlineRes, null),
+      currentProject:
+        projectRes.status === 'fulfilled'
+          ? extractResponseData(projectRes.value, null)
+          : null,
+      docCategoryList:
+        categoriesRes.status === 'fulfilled'
+          ? extractResponseData<any[]>(categoriesRes.value, [])
+          : [],
+      docList:
+        docsRes.status === 'fulfilled'
+          ? extractResponseData<any[]>(docsRes.value, [])
+          : [],
+      docVersions:
+        versionsRes.status === 'fulfilled'
+          ? extractResponseData<any[]>(versionsRes.value, [])
+          : [],
+      aiOutline:
+        outlineRes.status === 'fulfilled'
+          ? extractResponseData(outlineRes.value, null)
+          : null,
     };
   } catch {
     return EMPTY_DATA;
@@ -71,8 +87,12 @@ export async function clientLoader() {
 }
 
 const ProjectDetail: React.FC = () => {
+  const location = useLocation();
+  const dispatch = useDispatch();
   // 从路径 /projectDetail/:id 解析 id
   const projectId = Number(location.pathname.split('/').pop() || '0');
+  // 标记是否已完成初始加载（clientLoader 已处理）
+  const initialLoadedRef = useRef(false);
 
   // ==================== Dva Hooks：仅获取页面布局所需的 currentProject ====================
   const { currentProject: modelCurrentProject } = useShallowSelector(
@@ -98,37 +118,60 @@ const ProjectDetail: React.FC = () => {
     loaderData: clientLoaderData?.currentProject,
   });
 
+  // ==================== 路由变化时手动获取数据（兜底方案） ====================
+  // clientLoader 在同一路由组件切换参数时可能不重新执行，此处作为兜底
+  // 初始加载由 clientLoader 处理，路由变化时手动 dispatch
+  useEffect(() => {
+    if (!initialLoadedRef.current) {
+      initialLoadedRef.current = true;
+      return; // 初始加载由 clientLoader 完成
+    }
+    if (!projectId) return;
+    // 路由变化时，手动获取所有数据
+    dispatch({ type: 'projectDetail/fetchProjectDetail', payload: projectId });
+    dispatch({ type: 'docCategory/fetchProjectCategories', payload: projectId });
+    dispatch({ type: 'docList/fetchProjectDocs', payload: projectId });
+    dispatch({ type: 'docVersions/fetchDocVersions', payload: projectId });
+    dispatch({ type: 'docDetail/fetchAiOutline', payload: projectId });
+  }, [projectId, dispatch]);
+
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
   // 一次性同步所有数据到对应 model，子组件自行从 model 获取所需数据
+  // resetKey=projectId：路由参数变化时重置同步状态，确保加载新文集的数据
   useClientLoaderSync({
     clientLoaderData,
     actionType: 'projectDetail/saveCurrentProject',
     mapData: (data) => data.currentProject,
     hasData: (data) => !!data?.currentProject,
+    resetKey: projectId,
   });
 
   useClientLoaderSync({
     clientLoaderData,
     actionType: 'docList/saveDocList',
     mapData: (data) => data.docList || [],
+    resetKey: projectId,
   });
 
   useClientLoaderSync({
     clientLoaderData,
     actionType: 'docCategory/saveDocCategoryList',
     mapData: (data) => data.docCategoryList || [],
+    resetKey: projectId,
   });
 
   useClientLoaderSync({
     clientLoaderData,
     actionType: 'docVersions/saveDocVersions',
     mapData: (data) => data.docVersions || [],
+    resetKey: projectId,
   });
 
   useClientLoaderSync({
     clientLoaderData,
     actionType: 'docDetail/saveAiOutline',
     mapData: (data) => data.aiOutline || null,
+    resetKey: projectId,
   });
 
   // ==================== 页面级事件：仅保留多个子组件共用的文档跳转 ====================

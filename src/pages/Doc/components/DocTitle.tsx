@@ -9,9 +9,11 @@ import './DocTitle.less';
 interface DocTitleProps {
   title: string;
   currentVersion: DocVersion | null;
+  /** 是否为当前版本（由父组件通过 doc.current_version_id 判断） */
+  isCurrent?: boolean;
 }
 
-const DocTitle: React.FC<DocTitleProps> = ({ title, currentVersion }) => {
+const DocTitle: React.FC<DocTitleProps> = ({ title, currentVersion, isCurrent = true }) => {
   return (
     <div className="doc-page-title-wrapper">
       {/* 标题（居中，占据剩余空间） */}
@@ -21,10 +23,10 @@ const DocTitle: React.FC<DocTitleProps> = ({ title, currentVersion }) => {
       {currentVersion && (
         <div className="doc-page-version-info">
           <Tag
-            color={currentVersion.is_current ? 'green' : 'orange'}
+            color={isCurrent ? 'green' : 'orange'}
             className="version-tag"
           >
-            {currentVersion.is_current ? '当前版本' : '历史版本'}
+            {isCurrent ? '当前版本' : '历史版本'}
           </Tag>
           <span className="version-text">{currentVersion.version}</span>
           <span className="version-divider">·</span>

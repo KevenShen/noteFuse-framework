@@ -185,8 +185,8 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
       const versions = (docVersions || [])
         .filter((v: any) => v.doc_id === doc.id)
         .sort((a: any, b: any) => {
-          if (a.is_current && !b.is_current) return -1;
-          if (!a.is_current && b.is_current) return 1;
+          if (a.id === doc.current_version_id && b.id !== doc.current_version_id) return -1;
+          if (a.id !== doc.current_version_id && b.id === doc.current_version_id) return 1;
           return new Date(b.update_time).getTime() - new Date(a.update_time).getTime();
         });
       return {
@@ -242,6 +242,7 @@ const EditorSidebar: React.FC<EditorSidebarProps> = ({
                   <DocTree
                     categories={categories || []}
                     docs={docsWithVersions}
+                    projectId={projectId}
                     selectedKeys={currentDocId ? [String(currentDocId)] : []}
                     selectedVersionKey={
                       currentVersionId ? `version-${currentVersionId}` : undefined

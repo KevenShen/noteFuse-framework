@@ -4,8 +4,8 @@
 // 【路由层】只包含路由定义和中间件配置，不包含业务逻辑
 
 import type { Request, Response } from 'express';
-import { userController } from './user.controller';
 import { withMiddleware } from '../../Core/middleware';
+import { userController } from './user.controller';
 import {
   validateChangePasswordRequest,
   validateLoginRequest,

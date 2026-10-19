@@ -24,7 +24,8 @@ import { createTable } from '../Core/database';
 import { MockMongoCollection } from '../Core/mongodb';
 import { createCache } from '../Core/redis';
 
-// ==================== 类型定义 ====================
+// #region 文档实体数据表实例（L1：MockTable 内存数据库，主存储）
+// ==================== 1. 类型定义 ====================
 
 /** 文档分类表结构 */
 export interface MockDocCategory {
@@ -41,15 +42,17 @@ export interface MockDocCategory {
 export interface MockDoc {
   id: number;
   project_id: number;
+  doc_category_id: number;
   name: string;
   summary: string;
-  doc_category_id: number;
   sort: number;
   author_id: number;
   author_name: string;
   version_overview: string;
   modify_time: number;
   created_at: string;
+  /** 当前使用的版本 ID（切换版本时只需更新此字段，1次写入） */
+  current_version_id: number;
 }
 /** 文档版本状态 */
 export type MockVersionStatus =
@@ -63,13 +66,12 @@ export interface MockDocVersion {
   id: number;
   doc_id: number;
   version: string;
-  status: MockVersionStatus;
   content: string;
   outline: string;
   author_id: number;
   author_name: string;
   remark: string;
-  is_current: boolean;
+  status: MockVersionStatus;
   created_at: string;
   /** 创建时间（时间戳，兼容旧代码） */
   create_time?: number;
@@ -77,17 +79,6 @@ export interface MockDocVersion {
   update_time?: number;
   /** 基础版本 ID */
   base_version_id?: number | null;
-}
-
-/** 文档浏览历史表结构 */
-export interface MockDocBrowseHistory {
-  id: number;
-  user_id: number;
-  doc_id: number;
-  project_id: number;
-  doc_name: string;
-  project_name: string;
-  browse_time: number;
 }
 
 /** 文档批注表结构（内容嵌入标记版） */
@@ -113,7 +104,18 @@ export interface MockDocAnnotation {
   is_orphan?: boolean;
 }
 
-// ==================== 初始数据 ====================
+/** 文档浏览历史表结构 */
+export interface MockDocBrowseHistory {
+  id: number;
+  user_id: number;
+  doc_id: number;
+  project_id: number;
+  doc_name: string;
+  project_name: string;
+  browse_time: number;
+}
+
+// ==================== 2. 初始数据 ====================
 
 const now = Date.now();
 
@@ -211,6 +213,7 @@ export const docs: MockDoc[] = [
       '## 版本更新总览\n\n### v1.2.0\n- 新增文档版本管理功能\n- 优化编辑器性能\n\n### v1.1.0\n- 新增协作编辑功能\n- 修复若干 bug',
     modify_time: now - 3600000,
     created_at: '2024-01-15 10:00:00',
+    current_version_id: 1001,
   },
   {
     id: 112,
@@ -224,6 +227,7 @@ export const docs: MockDoc[] = [
     version_overview: '## 版本更新总览\n\n### v1.0.0\n- 初始版本发布',
     modify_time: now - 7200000,
     created_at: '2024-01-16 09:00:00',
+    current_version_id: 1004,
   },
   {
     id: 113,
@@ -237,6 +241,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 86400000,
     created_at: '2024-01-17 14:00:00',
+    current_version_id: 0,
   },
   {
     id: 114,
@@ -250,6 +255,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 172800000,
     created_at: '2024-01-18 10:00:00',
+    current_version_id: 1005,
   },
   {
     id: 115,
@@ -263,6 +269,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 259200000,
     created_at: '2024-01-19 11:00:00',
+    current_version_id: 0,
   },
   {
     id: 116,
@@ -276,6 +283,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 345600000,
     created_at: '2024-01-20 09:00:00',
+    current_version_id: 0,
   },
   {
     id: 117,
@@ -289,6 +297,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 432000000,
     created_at: '2024-01-21 15:00:00',
+    current_version_id: 0,
   },
   {
     id: 121,
@@ -302,6 +311,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 518400000,
     created_at: '2024-02-01 10:00:00',
+    current_version_id: 1006,
   },
   {
     id: 122,
@@ -315,6 +325,7 @@ export const docs: MockDoc[] = [
     version_overview: '',
     modify_time: now - 604800000,
     created_at: '2024-02-05 14:00:00',
+    current_version_id: 0,
   },
 ];
 
@@ -362,7 +373,6 @@ export const docVersions: MockDocVersion[] = [
     author_id: 1,
     author_name: '超级管理员',
     remark: '正式发布版本',
-    is_current: true,
     created_at: '2024-03-01 10:00:00',
   },
   {
@@ -375,7 +385,6 @@ export const docVersions: MockDocVersion[] = [
     author_id: 1,
     author_name: '超级管理员',
     remark: '历史版本',
-    is_current: false,
     created_at: '2024-02-15 10:00:00',
   },
   {
@@ -388,7 +397,6 @@ export const docVersions: MockDocVersion[] = [
     author_id: 1,
     author_name: '超级管理员',
     remark: '初始版本',
-    is_current: false,
     created_at: '2024-01-15 10:00:00',
   },
   {
@@ -402,7 +410,6 @@ export const docVersions: MockDocVersion[] = [
     author_id: 1,
     author_name: '超级管理员',
     remark: '正式版本',
-    is_current: true,
     created_at: '2024-01-16 09:00:00',
   },
   {
@@ -415,7 +422,6 @@ export const docVersions: MockDocVersion[] = [
     author_id: 1,
     author_name: '超级管理员',
     remark: '正式版本',
-    is_current: true,
     created_at: '2024-01-18 10:00:00',
   },
   {
@@ -429,8 +435,24 @@ export const docVersions: MockDocVersion[] = [
     author_id: 2,
     author_name: '内容编辑',
     remark: '草稿版本',
-    is_current: true,
     created_at: '2024-02-01 10:00:00',
+  },
+];
+
+/** 初始文档批注数据 */
+export const docAnnotations: MockDocAnnotation[] = [
+  {
+    id: 1,
+    doc_id: 111,
+    version_id: 1001,
+    user_id: 1,
+    anchor_text: '实时协作编辑',
+    anchor_context_before: '## 核心功能\n\n- ',
+    anchor_context_after: '\n- 版本管理',
+    original_line_number: 5,
+    content: '这里需要补充实时协作的技术实现说明，使用 OT 还是 CRDT？',
+    created_at: '2024-03-01 11:00:00',
+    updated_at: '2024-03-01 11:00:00',
   },
 ];
 
@@ -474,26 +496,7 @@ export const docBrowseHistory: MockDocBrowseHistory[] = [
   },
 ];
 
-/** 初始文档批注数据 */
-export const docAnnotations: MockDocAnnotation[] = [
-  {
-    id: 1,
-    doc_id: 111,
-    version_id: 1001,
-    user_id: 1,
-    anchor_text: '实时协作编辑',
-    anchor_context_before: '## 核心功能\n\n- ',
-    anchor_context_after: '\n- 版本管理',
-    original_line_number: 5,
-    content: '这里需要补充实时协作的技术实现说明，使用 OT 还是 CRDT？',
-    created_at: '2024-03-01 11:00:00',
-    updated_at: '2024-03-01 11:00:00',
-  },
-];
-
-// ============================================================================
-// 1. MockTable 实例（参照 project.ts / user.ts 架构）
-// ============================================================================
+// ==================== 3. MockTable 实例（L1 内存数据库） ====================
 
 /**
  * 文档分类表实例
@@ -576,7 +579,7 @@ export const docTable: MockTable<MockDoc> = createTable<MockDoc>({
  * 【数据特点】
  * - 通过 doc_id 关联到文档
  * - 一个文档可以有多个版本
- * - is_current 标记当前使用的版本
+ * - 当前版本通过 doc.current_version_id 字段标识
  * - 包含完整内容、大纲、备注等
  */
 export const docVersionTable: MockTable<MockDocVersion> =
@@ -598,44 +601,6 @@ export const docVersionTable: MockTable<MockDocVersion> =
       enabled: false,
       createdAtField: 'created_at',
       updatedAtField: 'update_time',
-      auto: false,
-    },
-
-    softDelete: {
-      enabled: false,
-      field: 'deleted_at',
-      valueType: 'timestamp',
-    },
-  });
-
-/**
- * 文档浏览历史表实例
- *
- * 【数据特点】
- * - 通过 user_id 关联到用户
- * - 通过 doc_id / project_id 关联到文档和文集
- * - 记录浏览时间，用于最近访问列表
- * - 写入频繁，数据量大，通常不缓存
- */
-export const docBrowseHistoryTable: MockTable<MockDocBrowseHistory> =
-  createTable<MockDocBrowseHistory>({
-    name: 'doc_browse_history',
-    initialData: docBrowseHistory,
-    autoIncrementField: 'id',
-
-    // 异步模式
-    async: true,
-    asyncConfig: {
-      delayEnabled: true,
-      minDelay: 1,
-      maxDelay: 5,
-      delayMode: 'random',
-    },
-
-    timestamps: {
-      enabled: false,
-      createdAtField: 'browse_time',
-      updatedAtField: 'browse_time',
       auto: false,
     },
 
@@ -684,9 +649,45 @@ export const docAnnotationTable: MockTable<MockDocAnnotation> =
     },
   });
 
-// ============================================================================
-// 2. 数据库索引配置（参照 project.ts 架构）
-// ============================================================================
+/**
+ * 文档浏览历史表实例
+ *
+ * 【数据特点】
+ * - 通过 user_id 关联到用户
+ * - 通过 doc_id / project_id 关联到文档和文集
+ * - 记录浏览时间，用于最近访问列表
+ * - 写入频繁，数据量大，通常不缓存
+ */
+export const docBrowseHistoryTable: MockTable<MockDocBrowseHistory> =
+  createTable<MockDocBrowseHistory>({
+    name: 'doc_browse_history',
+    initialData: docBrowseHistory,
+    autoIncrementField: 'id',
+
+    // 异步模式
+    async: true,
+    asyncConfig: {
+      delayEnabled: true,
+      minDelay: 1,
+      maxDelay: 5,
+      delayMode: 'random',
+    },
+
+    timestamps: {
+      enabled: false,
+      createdAtField: 'browse_time',
+      updatedAtField: 'browse_time',
+      auto: false,
+    },
+
+    softDelete: {
+      enabled: false,
+      field: 'deleted_at',
+      valueType: 'timestamp',
+    },
+  });
+
+// ==================== 4. 数据库索引初始化 ====================
 
 /**
  * 初始化文档分类表索引
@@ -750,43 +751,16 @@ function initDocTableIndexes(): void {
  * 初始化文档版本表索引
  *
  * 索引列表：
- * 1. idx_doc_current (doc_id, is_current)
- *    - 场景：获取文档的当前版本
- * 2. idx_doc_created (doc_id, created_at)
+ * 1. idx_doc_created (doc_id, created_at)
  *    - 场景：获取文档的所有版本，按创建时间排序
+ *
+ * 【注意】当前版本通过 doc.current_version_id 字段标识，无需在版本表建立 is_current 索引
  */
 function initDocVersionTableIndexes(): void {
-  void docVersionTable.createIndex(['doc_id', 'is_current'], {
-    name: 'idx_doc_current',
-    type: 'NORMAL',
-    comment: '获取文档当前版本：文档+是否当前复合索引',
-  });
   void docVersionTable.createIndex(['doc_id', 'created_at'], {
     name: 'idx_doc_created',
     type: 'NORMAL',
     comment: '文档版本列表：文档+创建时间复合索引',
-  });
-}
-
-/**
- * 初始化文档浏览历史表索引
- *
- * 索引列表：
- * 1. idx_user_browse (user_id, browse_time)
- *    - 场景：用户最近浏览的文档，按浏览时间排序
- * 2. idx_doc (doc_id)
- *    - 场景：文档的浏览历史
- */
-function initDocBrowseHistoryTableIndexes(): void {
-  void docBrowseHistoryTable.createIndex(['user_id', 'browse_time'], {
-    name: 'idx_user_browse',
-    type: 'NORMAL',
-    comment: '用户最近浏览：用户+浏览时间复合索引',
-  });
-  void docBrowseHistoryTable.createIndex(['doc_id'], {
-    name: 'idx_doc',
-    type: 'NORMAL',
-    comment: '文档浏览历史',
   });
 }
 
@@ -812,16 +786,37 @@ function initDocAnnotationTableIndexes(): void {
   });
 }
 
+/**
+ * 初始化文档浏览历史表索引
+ *
+ * 索引列表：
+ * 1. idx_user_browse (user_id, browse_time)
+ *    - 场景：用户最近浏览的文档，按浏览时间排序
+ * 2. idx_doc (doc_id)
+ *    - 场景：文档的浏览历史
+ */
+function initDocBrowseHistoryTableIndexes(): void {
+  void docBrowseHistoryTable.createIndex(['user_id', 'browse_time'], {
+    name: 'idx_user_browse',
+    type: 'NORMAL',
+    comment: '用户最近浏览：用户+浏览时间复合索引',
+  });
+  void docBrowseHistoryTable.createIndex(['doc_id'], {
+    name: 'idx_doc',
+    type: 'NORMAL',
+    comment: '文档浏览历史',
+  });
+}
+
 // 立即执行索引初始化
 initDocCategoryTableIndexes();
 initDocTableIndexes();
 initDocVersionTableIndexes();
 initDocBrowseHistoryTableIndexes();
 initDocAnnotationTableIndexes();
+// #endregion 文档实体数据表实例（L1：MockTable 内存数据库，主存储）
 
-// ============================================================================
-// 3. Redis 缓存层（参照 project.ts 架构）
-// ============================================================================
+// #region 文集缓存层（L3：Redis KV 缓存，延迟最低）
 
 /**
  * 文档模块缓存配置
@@ -1012,9 +1007,9 @@ export const docListCache = createCache(DOC_CACHE_CONFIG.docList);
  */
 export const docVersionCache = createCache(DOC_CACHE_CONFIG.docVersion);
 
-// ============================================================================
-// 4. MongoDB 集合（L2 文档数据库，参照 project.ts 架构）
-// ============================================================================
+// #endregion 文集缓存层（L3）
+
+// #region 文集 MongoDB 集合定义（L2：MongoDB 文档数据库，支持复杂查询）
 
 /**
  * 文档分类 MongoDB 集合
@@ -1085,7 +1080,8 @@ export const docMongoCollection: MockMongoCollection<MongoDoc> =
  * - 初始数据：与 docVersionTable（database）保持一致
  *
  * 【使用方式】
- * const version = await docVersionMongoCollection.findOne({ doc_id: 111, is_current: true });
+ * const doc = await docMongoCollection.findOne({ id: 111 });
+ * const version = await docVersionMongoCollection.findOne({ id: doc.current_version_id });
  * const versions = await docVersionMongoCollection.find({ doc_id: 111 }).toArray();
  */
 export const docVersionMongoCollection: MockMongoCollection<MockDocVersion> =
@@ -1188,17 +1184,12 @@ function initDocMongoIndexes(): void {
 /**
  * 初始化文档版本 MongoDB 集合索引
  *
- * 【索引列表】（2 个复合索引）
- * 1. doc_id_1_is_current_1 - 获取文档当前版本
- * 2. doc_id_1_created_at_-1 - 文档版本列表
+ * 【索引列表】（1 个复合索引）
+ * 1. doc_id_1_created_at_-1 - 文档版本列表
+ *
+ * 【注意】当前版本通过 doc.current_version_id 标识，无需 is_current 索引
  */
 function initDocVersionMongoIndexes(): void {
-  // 获取文档当前版本：文档+是否当前复合索引
-  docVersionMongoCollection.createIndex(
-    { doc_id: 1, is_current: 1 },
-    { name: 'idx_doc_current', unique: false },
-  );
-
   // 文档版本列表：文档+创建时间复合索引
   docVersionMongoCollection.createIndex(
     { doc_id: 1, created_at: -1 },
@@ -1212,10 +1203,9 @@ function initDocVersionMongoIndexes(): void {
 initDocCategoryMongoIndexes();
 initDocMongoIndexes();
 initDocVersionMongoIndexes();
+// #endregion MongoDB 集合定义（L2 文档数据库）
 
-// ============================================================================
-// 6. 缓存初始化函数（冷启动）
-// ============================================================================
+// #region 冷启动初始化与工具函数
 
 /**
  * 文档分类缓存数据计算结果
@@ -1541,3 +1531,4 @@ export async function initDocData(): Promise<void> {
 
 // 模块加载时自动执行全局冷启动初始化
 initDocData();
+// #endregion 冷启动初始化与工具函数

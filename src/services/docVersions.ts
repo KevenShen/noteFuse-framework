@@ -40,9 +40,16 @@ export async function createDocVersion(
   });
 }
 
-/** 更新版本内容（支持 content、outline、remark） */
+/** 更新版本信息（支持 content、outline、remark、version、status） */
 export async function updateDocVersion(
-  params: { versionId: number; content?: string; outline?: string; remark?: string },
+  params: {
+    versionId: number;
+    content?: string;
+    outline?: string;
+    remark?: string;
+    version?: string;
+    status?: string;
+  },
   options?: { [key: string]: any },
 ) {
   const { versionId, ...data } = params;

@@ -5,15 +5,19 @@
 
 import { BusinessError } from '../../Core';
 import { redis } from '../../Core/redis';
-import { docCategories, docVersions, docs } from '../../Entities/doc';
-import type { MockProject } from '../../Entities/project';
+import {
+  docCategoryTable,
+  docTable,
+  docVersionTable,
+} from '../../Entities/doc';
+import type { MockProject, MongoProject } from '../../Entities/project';
 import {
   projectCache,
   projectMongoCollection,
   projectTable,
 } from '../../Entities/project';
 // 从文集体服务导入需要的辅助函数
-import { invalidateProjectListCache } from './project.service';
+import { batchGetProjectInfo, invalidateProjectListCache } from './project.service';
 
 /**
  * AI 大纲内存存储
@@ -115,6 +119,28 @@ async function getProjectWithFallback(projectId: number): Promise<MockProject | 
 // ============================================================================
 
 class ProjectInfoService {
+  // ==================== 文集详情 ====================
+
+  /**
+   * 获取文集详情（多级缓存降级）
+   *
+   * 【读取优先级】Redis（L3）→ MongoDB（L2）→ 数据库（L1）
+   * 【缓存策略】Cache-Aside 模式，未命中时从下层获取并写入上层缓存
+   * 【返回】完整的 MongoProject（含 doc_count/doc_category_count 统计字段）
+   *
+   * @param id 文集 ID
+   * @returns 文集详情
+   */
+  async getProjectDetail(id: number): Promise<MongoProject> {
+    // 复用批量获取函数（传入单元素数组），自动实现 Redis → MongoDB → 数据库降级
+    const projects = await batchGetProjectInfo([id]);
+    const project = projects[0];
+    if (!project) {
+      throw new BusinessError('文集不存在', 404);
+    }
+    return project;
+  }
+
   // ==================== 文档分类 ====================
 
   /**
@@ -132,7 +158,8 @@ class ProjectInfoService {
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    return docCategories
+    const allCategories = await docCategoryTable.findAll();
+    return allCategories
       .filter((c) => c.project_id === projectId)
       .sort((a, b) => a.sort - b.sort);
   }
@@ -144,12 +171,13 @@ class ProjectInfoService {
    * @param projectId 文集 ID
    * @returns 文档列表（扁平化，按 sort 排序）
    */
-  getProjectDocs(projectId: number): any[] {
-    const project = projectTable.findById(projectId);
+  async getProjectDocs(projectId: number): Promise<any[]> {
+    const project = await projectTable.findById(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    return docs
+    const allDocs = await docTable.findAll();
+    return allDocs
       .filter((d) => d.project_id === projectId)
       .sort((a, b) => a.sort - b.sort);
   }
@@ -161,17 +189,19 @@ class ProjectInfoService {
    * @param projectId 文集 ID
    * @returns 文档版本列表（扁平化）
    */
-  getProjectDocVersions(projectId: number): any[] {
-    const project = projectTable.findById(projectId);
+  async getProjectDocVersions(projectId: number): Promise<any[]> {
+    const project = await projectTable.findById(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
     // 获取该文集下所有文档的 ID
-    const docIds = docs
+    const allDocs = await docTable.findAll();
+    const docIds = allDocs
       .filter((d) => d.project_id === projectId)
       .map((d) => d.id);
     // 返回这些文档的所有版本
-    return docVersions.filter((v) => docIds.includes(v.doc_id));
+    const allVersions = await docVersionTable.findAll();
+    return allVersions.filter((v) => docIds.includes(v.doc_id));
   }
 
   // ==================== AI 总结大纲 ====================
@@ -200,13 +230,14 @@ class ProjectInfoService {
    * @param projectId 文集 ID
    * @returns 生成的 AI 大纲数据
    */
-  generateAiOutline(projectId: number): any {
-    const project = projectTable.findById(projectId);
+  async generateAiOutline(projectId: number): Promise<any> {
+    const project = await projectTable.findById(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
     // 获取该文集下的文档列表
-    const docList = docs
+    const allDocs = await docTable.findAll();
+    const docList = allDocs
       .filter((d) => d.project_id === projectId)
       .sort((a, b) => a.sort - b.sort);
 
@@ -215,7 +246,8 @@ class ProjectInfoService {
     }
 
     // 获取该文集下的文档分类
-    const categoryList = docCategories
+    const allCategories = await docCategoryTable.findAll();
+    const categoryList = allCategories
       .filter((c) => c.project_id === projectId)
       .sort((a, b) => a.sort - b.sort);
 

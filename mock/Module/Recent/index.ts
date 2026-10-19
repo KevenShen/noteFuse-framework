@@ -9,8 +9,8 @@ import { getCurrentUserFromToken } from '../../Core/auth';
 const { docs, projects, doc_versions, doc_browse_history } = db;
 
 /** 从请求 token 中获取当前用户 ID，兜底 1（mock 环境） */
-const getUserId = (req: Request): number => {
-  const user = getCurrentUserFromToken(req);
+const getUserId = async (req: Request): Promise<number> => {
+  const user = await getCurrentUserFromToken(req);
   return user?.id || 1;
 };
 
@@ -23,7 +23,7 @@ export default {
       page_size = 10,
       time_filter = 'all', // all/today/week/month
     } = req.query as any;
-    const user_id = getUserId(req);
+    const user_id = await getUserId(req);
 
     // 按修改时间倒序
     let list = [...docs].sort((a, b) => b.modify_time - a.modify_time);
@@ -42,7 +42,7 @@ export default {
     const result = list.map((doc) => {
       const project = projects.find((p) => p.id === doc.project_id);
       const currentVersion = doc_versions.find(
-        (v) => v.doc_id === doc.id && v.is_current,
+        (v) => v.doc_id === doc.id && v.id === doc.current_version_id,
       );
       return {
         ...doc,
@@ -72,7 +72,7 @@ export default {
   'GET /api/recent/created': async (req: Request, res: Response) => {
     await delay(200);
     const { page = 1, page_size = 10 } = req.query as any;
-    const user_id = getUserId(req);
+    const user_id = await getUserId(req);
 
     let result = [...docs];
     // 按创建时间排序（modify_time 近似创建时间，取最早的版本）
@@ -111,14 +111,14 @@ export default {
   'GET /api/recent/updated': async (req: Request, res: Response) => {
     await delay(200);
     const { page = 1, page_size = 10 } = req.query as any;
-    const user_id = getUserId(req);
+    const user_id = await getUserId(req);
 
     let result = [...docs];
     result = result
       .map((doc) => {
         const project = projects.find((p) => p.id === doc.project_id);
         const currentVersion = doc_versions.find(
-          (v) => v.doc_id === doc.id && v.is_current,
+          (v) => v.doc_id === doc.id && v.id === doc.current_version_id,
         );
         return {
           ...doc,
@@ -149,7 +149,7 @@ export default {
   'GET /api/recent/browsed': async (req: Request, res: Response) => {
     await delay(200);
     const { page = 1, page_size = 10 } = req.query as any;
-    const user_id = getUserId(req);
+    const user_id = await getUserId(req);
 
     // 从浏览历史表取当前用户的记录，按浏览时间倒序
     const userHistory = doc_browse_history
@@ -171,7 +171,7 @@ export default {
         if (!doc) return null;
         const project = projects.find((p) => p.id === doc.project_id);
         const currentVersion = doc_versions.find(
-          (v) => v.doc_id === doc.id && v.is_current,
+          (v) => v.doc_id === doc.id && v.id === doc.current_version_id,
         );
         return {
           ...doc,

@@ -23,8 +23,11 @@
  */
 
 import { BusinessError } from '../../Core';
-import { docs, docVersions } from '../../Entities/doc';
-import { projectCategories, projects } from '../../Entities/project';
+import { docTable, docVersionTable } from '../../Entities/doc';
+import {
+  projectCategoryTable,
+  projectTable,
+} from '../../Entities/project';
 import {
   collectGroupTable,
   collectTable,
@@ -57,12 +60,11 @@ import type {
  *
  * 【注意】
  * 这里使用 require 动态导入，避免循环依赖问题
- * User 模块的 service 可能会导入 Collect 模块的某些内容
  */
-const getCurrentUserId = (req?: any): number => {
+const getCurrentUserId = async (req?: any): Promise<number> => {
   try {
-    const { getCurrentUserFromToken } = require('../User/service');
-    const user = getCurrentUserFromToken(req);
+    const { getCurrentUserFromToken } = require('../../Core/auth');
+    const user = await getCurrentUserFromToken(req);
     return user?.id || 1;
   } catch (error) {
     return 1;
@@ -319,10 +321,15 @@ export async function getCollectList(
   const type = (data.type || 'doc') as CollectType;
 
   // 1. 从 L1 数据库获取数据（主存储）
-  const allCollects = await collectTable.findAll();
-  const allGroups = await collectGroupTable.findAll();
-
-  // 使用静态导入的 docs, projects, docVersions（避免动态 require 在 Umi mock 环境中解析失败）
+  const [allCollects, allGroups, allDocs, allVersions, allProjects, allProjectCategories] =
+    await Promise.all([
+      collectTable.findAll(),
+      collectGroupTable.findAll(),
+      docTable.findAll(),
+      docVersionTable.findAll(),
+      projectTable.findAll(),
+      projectCategoryTable.findAll(),
+    ]);
 
   // 2. 统一表过滤：按用户 + type
   let result = allCollects.filter(
@@ -339,11 +346,11 @@ export async function getCollectList(
     .map((c) => {
       const group = allGroups.find((g) => g.id === c.group_id);
       if (type === 'doc') {
-        const doc = docs.find((d: any) => d.id === c.target_id);
+        const doc = allDocs.find((d: any) => d.id === c.target_id);
         if (!doc) return null;
-        const project = projects.find((p: any) => p.id === doc.project_id);
-        const currentVersion = docVersions.find(
-          (v: any) => v.doc_id === doc.id && v.is_current,
+        const project = allProjects.find((p: any) => p.id === doc.project_id);
+        const currentVersion = allVersions.find(
+          (v: any) => v.doc_id === doc.id && v.id === doc.current_version_id,
         );
         return {
           ...doc,
@@ -356,9 +363,9 @@ export async function getCollectList(
           collect_time: c.collected_at,
         } as CollectItem;
       } else {
-        const project = projects.find((p: any) => p.id === c.target_id);
+        const project = allProjects.find((p: any) => p.id === c.target_id);
         if (!project) return null;
-        const category = projectCategories.find(
+        const category = allProjectCategories.find(
           (cat: any) => cat.id === project.project_category_id,
         );
         return {
@@ -438,14 +445,13 @@ export async function createCollect(
   }
 
   // 3. 获取目标信息（用于冗余字段快照保存）
-  // 使用静态导入的 docs, projects（避免动态 require 在 Umi mock 环境中解析失败）
   let targetName = '';
   let targetSummary = '';
   let targetCover = '';
   let targetAuthor = '';
 
   if (type === 'doc') {
-    const doc = docs.find((d: any) => d.id === targetId);
+    const doc = await docTable.findById(targetId);
     if (!doc) {
       throw new BusinessError('文档不存在');
     }
@@ -453,7 +459,7 @@ export async function createCollect(
     targetSummary = doc.summary || '';
     targetAuthor = doc.author_name || '';
   } else {
-    const project = projects.find((p: any) => p.id === targetId);
+    const project = await projectTable.findById(targetId);
     if (!project) {
       throw new BusinessError('文集不存在');
     }

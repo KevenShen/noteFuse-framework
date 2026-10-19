@@ -1,15 +1,32 @@
-/**
- * 文档 CRUD DTO（Data Transfer Object，数据传输对象）
- *
- * 【职责】
- * 定义文档核心 CRUD 相关接口请求和响应的数据结构类型
- */
+// mock/Doc/doc.dto.ts
+// 文档 CRUD DTO（Data Transfer Object，数据传输对象）
+// 功能：定义文档核心 CRUD 相关接口请求和响应的数据结构类型
 
 import type { MockDoc, MockDocVersion } from '../../Entities/doc';
 
-// ==================== 文档列表相关 DTO（预留） ====================
+// ==================== 公共类型 ====================
 
-/** 获取文档列表请求参数 */
+/** 文档详情（含当前版本和版本列表） */
+export interface DocDetailWithVersion {
+  /** 文档基本信息 */
+  doc: MockDoc;
+  /** 文档内容（从当前版本聚合） */
+  content?: string;
+  /** 作者 ID */
+  author_id?: number;
+  /** 作者名称 */
+  author_name?: string;
+  /** 当前版本 */
+  current_version: MockDocVersion | null;
+  /** 所有版本列表（可选） */
+  versions?: MockDocVersion[];
+  /** 文档标签 */
+  tags: any[];
+}
+
+// ==================== 获取文档列表 ====================
+
+/** 获取文档列表请求参数（Query） */
 export interface GetDocListRequest {
   /** 文集 ID（必填） */
   project_id: number;
@@ -39,27 +56,12 @@ export interface GetDocListResponse {
   page_size: number;
 }
 
-// ==================== 文档详情相关 DTO ====================
+// ==================== 获取文档详情 ====================
 
 /** 获取文档详情响应数据（data 字段内容） */
-export interface GetDocDetailResponse {
-  /** 文档基本信息 */
-  doc: MockDoc;
-  /** 文档内容（从当前版本聚合） */
-  content?: string;
-  /** 作者 ID */
-  author_id?: number;
-  /** 作者名称 */
-  author_name?: string;
-  /** 当前版本 */
-  current_version: MockDocVersion | null;
-  /** 所有版本列表（可选） */
-  versions?: MockDocVersion[];
-  /** 文档标签 */
-  tags: any[];
-}
+export type GetDocDetailResponse = DocDetailWithVersion;
 
-// ==================== 创建文档相关 DTO ====================
+// ==================== 创建文档 ====================
 
 /** 创建文档请求参数 */
 export interface CreateDocRequest {
@@ -87,7 +89,7 @@ export interface CreateDocResponse {
   current_version: MockDocVersion;
 }
 
-// ==================== 更新文档相关 DTO ====================
+// ==================== 更新文档 ====================
 
 /** 更新文档请求参数 */
 export interface UpdateDocRequest {
@@ -119,7 +121,13 @@ export interface UpdateDocResponse {
   version_overview: string;
 }
 
-// ==================== 删除文档相关 DTO ====================
+// ==================== 删除文档 ====================
+
+/** 删除文档请求参数（ID 在 URL params 中） */
+export interface DeleteDocRequest {
+  /** 文档 ID */
+  id: number;
+}
 
 /** 删除文档响应数据（data 字段内容） */
 export interface DeleteDocResponse {

@@ -215,8 +215,8 @@ const TagManager: React.FC<TagManagerProps> = ({
       const versions = docVersions
         .filter((v) => v.doc_id === doc.id)
         .sort((a, b) => {
-          if (a.is_current && !b.is_current) return -1;
-          if (!a.is_current && b.is_current) return 1;
+          if (a.id === doc.current_version_id && b.id !== doc.current_version_id) return -1;
+          if (a.id !== doc.current_version_id && b.id === doc.current_version_id) return 1;
           const timeA = typeof a.update_time === 'number' ? a.update_time : new Date(a.update_time || '').getTime();
           const timeB = typeof b.update_time === 'number' ? b.update_time : new Date(b.update_time || '').getTime();
           return timeB - timeA;
@@ -527,13 +527,13 @@ const TagManager: React.FC<TagManagerProps> = ({
                       {doc.versions!.map((version: TagDocVersion) => (
                         <div
                           key={version.id}
-                          className={`tag-version-item ${version.is_current ? 'tag-version-current' : ''} ${version.id === currentVersionId ? 'tag-version-active' : ''}`}
+                          className={`tag-version-item ${version.id === doc.current_version_id ? 'tag-version-current' : ''} ${version.id === currentVersionId ? 'tag-version-active' : ''}`}
                           onClick={(e) => handleVersionClick(doc.id, version, e)}
                           title={`查看 ${version.version} 版本`}
                         >
                           <span className="tag-version-dot" />
                           <span className="tag-version-name">{version.version}</span>
-                          {version.is_current && (
+                          {version.id === doc.current_version_id && (
                             <Tag color="green" style={{ marginLeft: 4, fontSize: 10 }}>
                               当前
                             </Tag>

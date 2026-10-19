@@ -131,7 +131,10 @@ export function WithLuaScript<T extends MixinConstructor>(Base: T) {
 
         // ==================== Hash 命令 ====================
         'HGET': (args) => self.hget(args[0], args[1]),
-        'HSET': (args) => self.hset(args[0], args[1], args[2]),
+        'HSET': (args) =>
+          typeof args[1] === 'object'
+            ? self.hset(args[0], args[1])
+            : self.hset(args[0], args[1], args[2]),
         'HDEL': (args) => self.hdel(args[0], args[1]),
         'HEXISTS': (args) => (self.hexists(args[0], args[1]) ? 1 : 0),
         'HGETALL': (args) => self.hgetAll(args[0]),

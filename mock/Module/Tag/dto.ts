@@ -14,22 +14,11 @@
  */
 
 import type { MockTag, MockTagCategory, MockTagRelation, TagType } from '../../Entities/tag';
+import type { ApiResponse, PaginatedResponse } from '../../Core';
 
 // ============================================================================
-// 1. 通用响应类型
+// 1. 通用响应类型（统一从 Core 导入，避免重复定义）
 // ============================================================================
-
-/** 统一响应格式 */
-export interface ApiResponse<T = any> {
-  /** 是否成功 */
-  success: boolean;
-  /** 错误码 */
-  errorCode: number;
-  /** 提示信息 */
-  message: string;
-  /** 响应数据 */
-  data: T;
-}
 
 /** 分页响应格式 */
 export interface PaginatedResponse<T = any> {

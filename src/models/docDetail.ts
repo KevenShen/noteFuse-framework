@@ -178,10 +178,19 @@ export default {
       },
       { put }: any,
     ): Generator<any, void, any> {
-      yield put({ type: 'docCategory/saveDocCategoryList', payload: payload.categories || [] });
-      yield put({ type: 'docList/saveDocList', payload: payload.docs || [] });
-      yield put({ type: 'docVersions/saveDocVersions', payload: payload.versions || [] });
-      yield put({ type: 'saveCurrentDoc', payload: payload.currentDoc || null });
+      // 只在数据非空时才更新，避免接口失败时空数组覆盖 model 中已有数据
+      if (payload.categories?.length) {
+        yield put({ type: 'docCategory/saveDocCategoryList', payload: payload.categories });
+      }
+      if (payload.docs?.length) {
+        yield put({ type: 'docList/saveDocList', payload: payload.docs });
+      }
+      if (payload.versions?.length) {
+        yield put({ type: 'docVersions/saveDocVersions', payload: payload.versions });
+      }
+      if (payload.currentDoc) {
+        yield put({ type: 'saveCurrentDoc', payload: payload.currentDoc });
+      }
     },
 
     // ==================== AI 大纲 ====================

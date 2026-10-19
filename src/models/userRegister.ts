@@ -38,11 +38,11 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(register, payload);
-        if (!res.success) {
-          message.error(res.message || '注册失败');
+        if (!res?.success) {
+          message.error(res?.message || '注册失败');
           return;
         }
-        message.success('注册成功，请登录');
+        message.success(`${res.data?.username || '用户'}注册成功，请登录`);
         history.push('/login');
       } catch (error) {
         console.error('[UserRegisterModel] handleRegister 失败:', error);

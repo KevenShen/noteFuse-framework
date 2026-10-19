@@ -2,24 +2,24 @@
 // 文集 DTO（Data Transfer Object，数据传输对象）
 // 功能：定义文集相关接口请求和响应的数据结构类型
 
-import type { MockProject } from '../../Entities/project';
+import type { MongoProject, MockProject } from '../../Entities/project';
 
 // ==================== 文集列表相关 DTO ====================
 
 /** 获取文集列表请求参数 */
 export interface GetProjectListRequest {
-  /** 当前页（默认 1） */
-  page?: number;
-  /** 每页条数（默认 12） */
-  page_size?: number;
+  /** 分类 ID（0 表示全部，-1 表示未分类） */
+  project_category_id?: number;
   /** 搜索关键词（文集名称/简介） */
   keyword?: string;
   /** 筛选类型（all=全部/mine=我的/collab=协作/private=私有） */
   filter?: 'all' | 'mine' | 'collab' | 'private';
-  /** 分类 ID（0 表示全部，-1 表示未分类） */
-  project_category_id?: number;
   /** 排序方式（update=更新时间/create=创建时间/count=文档数/name=名称） */
   sort?: 'update' | 'create' | 'count' | 'name';
+  /** 当前页（默认 1） */
+  page?: number;
+  /** 每页条数（默认 12） */
+  page_size?: number;
   /** 用户 ID（用于筛选我的文集/私有文集） */
   user_id?: number;
 }
@@ -27,7 +27,7 @@ export interface GetProjectListRequest {
 /** 获取文集列表响应数据（data 字段内容） */
 export interface GetProjectListResponse {
   /** 文集列表 */
-  list: MockProject[];
+  list: MongoProject[];
   /** 总条数 */
   total: number;
   /** 当前页 */
@@ -35,11 +35,6 @@ export interface GetProjectListResponse {
   /** 每页条数 */
   page_size: number;
 }
-
-// ==================== 文集详情相关 DTO ====================
-
-/** 获取文集详情响应数据（data 字段内容） */
-export type GetProjectDetailResponse = MockProject;
 
 // ==================== 创建文集相关 DTO ====================
 
@@ -66,7 +61,7 @@ export interface CreateProjectRequest {
 }
 
 /** 创建文集响应数据（data 字段内容） */
-export type CreateProjectResponse = MockProject;
+export type CreateProjectResponse = MongoProject;
 
 // ==================== 更新文集相关 DTO ====================
 
@@ -93,9 +88,18 @@ export interface UpdateProjectRequest {
 }
 
 /** 更新文集响应数据（data 字段内容） */
-export type UpdateProjectResponse = MockProject;
+export type UpdateProjectResponse = MongoProject;
 
 // ==================== 删除文集相关 DTO ====================
 
-/** 删除文集响应数据（无数据） */
-export type DeleteProjectResponse = null;
+/** 删除文集请求参数 */
+export interface DeleteProjectRequest {
+  /** 文集 ID */
+  id: number;
+}
+
+/** 删除文集响应数据 */
+export interface DeleteProjectResponse {
+  /** 成功删除的文集 ID */
+  deletedId: number;
+}

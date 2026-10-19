@@ -61,11 +61,24 @@ export { delay, success, fail, BusinessError, handleService } from './common';
 export type {
   // 统一响应格式（与 success()/fail() 返回值对应）
   ApiResponse,
-  // 分页响应格式
+  // 分页数据格式
   PaginatedResponse,
-  // Service 层内部返回格式
-  ServiceResult,
 } from './common';
+
+// ==================== 业务错误码常量 ====================
+export {
+  ErrorCodes,
+  SUCCESS,
+  CommonErrorCodes,
+  UserErrorCodes,
+  DocErrorCodes,
+  ProjectErrorCodes,
+  TagErrorCodes,
+  CollectErrorCodes,
+  QuickErrorCodes,
+  RecentErrorCodes,
+} from './errorCodes';
+export type { ErrorCode } from './errorCodes';
 
 // ==================== 认证核心模块 ====================
 // 注意：userTable 已移至 Entities/user.ts，各模块应从 Entities 层导入
@@ -87,11 +100,8 @@ export {
   validateMiddleware,
   // 日志中间件
   logMiddleware,
-  // 错误处理中间件
-  errorHandlerMiddleware,
   // 中间件组合器
   compose,
-  withCustomMiddleware,
   // 带配置的中间件包装器
   withMiddleware,
 } from './middleware';

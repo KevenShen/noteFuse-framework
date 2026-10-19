@@ -1,92 +1,94 @@
-/**
- * 文档批注管理控制器层
- *
- * 【职责】
- * - 解析文档批注相关的请求参数（params/query/body）
- * - 调用 service 层方法
- * - 使用 handleService 统一异常处理，返回标准响应格式
- * - 不处理业务逻辑，只做 HTTP 层的请求/响应处理
- */
+// mock/Doc/docAnnotation.controller.ts
+// 文档批注管理控制器层
+// 职责：接收文档批注相关的 HTTP 请求，调用 Service 处理业务逻辑，统一返回响应
 
 import type { Request, Response } from 'express';
 import { handleService } from '../../Core';
-import * as docService from './docAnnotation.service';
+import type {
+  AddAnnotationRequest,
+  AddAnnotationResponse,
+  DeleteAnnotationRequest,
+  DeleteAnnotationResponse,
+  GetVersionAnnotationsResponse,
+  UpdateAnnotationRequest,
+  UpdateAnnotationResponse,
+} from './docAnnotation.dto';
+import { docAnnotationService } from './docAnnotation.service';
 
-// ==================== 文档批注管理 ====================
+// ============================================================================
+// 文档批注控制器
+// ============================================================================
 
-/**
- * 获取版本的批注列表
- * GET /api/doc/version/:id/annotations
- */
-export async function getVersionAnnotations(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  const versionId = Number(req.params.id);
+class DocAnnotationController {
+  // ==================== 获取批注 ====================
 
-  await handleService(
-    res,
-    () => docService.getVersionAnnotations(versionId),
-    '获取成功',
-  );
+  /** 获取版本的批注列表 */
+  async getVersionAnnotations(req: Request, res: Response): Promise<void> {
+    const versionId = Number(req.params.id);
+
+    await handleService<GetVersionAnnotationsResponse>(
+      res,
+      () => docAnnotationService.getVersionAnnotations(versionId),
+      '获取成功',
+    );
+  }
+
+  // ==================== 添加批注 ====================
+
+  /** 添加批注（同时保存带标记的原文） */
+  async addAnnotation(req: Request, res: Response): Promise<void> {
+    const versionId = Number(req.params.id);
+    const data = req.body as AddAnnotationRequest;
+
+    await handleService<AddAnnotationResponse>(
+      res,
+      () =>
+        docAnnotationService.addAnnotation(versionId, {
+          marker_id: Number(data.marker_id),
+          content: data.content,
+          content_with_marker: data.content_with_marker,
+          author_id: data.author_id ? Number(data.author_id) : 1,
+          author_name: data.author_name || 'admin',
+        }),
+      '批注添加成功',
+    );
+  }
+
+  // ==================== 更新批注 ====================
+
+  /** 更新批注 */
+  async updateAnnotation(req: Request, res: Response): Promise<void> {
+    const annotationId = Number(req.params.id);
+    const data = req.body as UpdateAnnotationRequest;
+
+    await handleService<UpdateAnnotationResponse>(
+      res,
+      () => docAnnotationService.updateAnnotation(annotationId, data.content),
+      '批注更新成功',
+    );
+  }
+
+  // ==================== 删除批注 ====================
+
+  /** 删除批注（同时删除原文中的标记） */
+  async deleteAnnotation(req: Request, res: Response): Promise<void> {
+    const annotationId = Number(req.params.id);
+    const data = req.body as DeleteAnnotationRequest;
+
+    await handleService<DeleteAnnotationResponse>(
+      res,
+      () =>
+        docAnnotationService.deleteAnnotation(
+          annotationId,
+          data.content_without_marker,
+        ),
+      '批注删除成功',
+    );
+  }
 }
 
-/**
- * 添加批注
- * POST /api/doc/version/:id/annotations
- */
-export async function addAnnotation(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  const versionId = Number(req.params.id);
+// ============================================================================
+// 导出控制器实例
+// ============================================================================
 
-  await handleService(
-    res,
-    () =>
-      docService.addAnnotation(versionId, {
-        marker_id: Number(req.body.marker_id),
-        content: req.body.content,
-        content_with_marker: req.body.content_with_marker,
-        author_id: req.body.author_id ? Number(req.body.author_id) : 1,
-        author_name: req.body.author_name || 'admin',
-      }),
-    '批注添加成功',
-  );
-}
-
-/**
- * 更新批注
- * PUT /api/doc/annotation/:id
- */
-export async function updateAnnotation(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  const annotationId = Number(req.params.id);
-  const { content } = req.body;
-
-  await handleService(
-    res,
-    () => docService.updateAnnotation(annotationId, content),
-    '批注更新成功',
-  );
-}
-
-/**
- * 删除批注
- * DELETE /api/doc/annotation/:id
- */
-export async function deleteAnnotation(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  const annotationId = Number(req.params.id);
-  const { content_without_marker } = req.body;
-
-  await handleService(
-    res,
-    () => docService.deleteAnnotation(annotationId, content_without_marker),
-    '批注删除成功',
-  );
-}
+export const docAnnotationController = new DocAnnotationController();

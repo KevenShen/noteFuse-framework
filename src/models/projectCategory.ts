@@ -34,7 +34,7 @@ export default {
     ) {
       state.projectCategoryList = payload;
     },
-    /** 新增或更新单个分类 */
+    /** 新增或更新单个分类（合并模式，防止后端返回缺字段时丢失数据） */
     upsertCategory(
       state: ProjectCategoryState,
       { payload }: { payload: ProjectCategoryItem },
@@ -43,7 +43,11 @@ export default {
         (c) => c.id === payload.id,
       );
       if (idx >= 0) {
-        state.projectCategoryList[idx] = payload;
+        // 合并而非替换：保留旧记录中未返回的字段（如 project_count、parent_id）
+        state.projectCategoryList[idx] = {
+          ...state.projectCategoryList[idx],
+          ...payload,
+        };
       } else {
         state.projectCategoryList.push(payload);
       }
@@ -55,6 +59,16 @@ export default {
     ) {
       state.projectCategoryList = state.projectCategoryList.filter(
         (c) => c.id !== payload,
+      );
+    },
+    /** 批量删除分类（乐观更新，含所有后代） */
+    removeCategories(
+      state: ProjectCategoryState,
+      { payload }: { payload: number[] },
+    ) {
+      const idSet = new Set(payload);
+      state.projectCategoryList = state.projectCategoryList.filter(
+        (c) => !idSet.has(c.id),
       );
     },
     /** 设置加载状态 */
@@ -69,6 +83,10 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(projectCategoryService.getCategoryList);
+        if (!res?.success) {
+          message.error(res?.message || '加载分类失败');
+          return;
+        }
         yield put({ type: 'saveCategoryList', payload: res.data });
       } catch (e) {
         message.error('加载分类失败');
@@ -84,6 +102,10 @@ export default {
     ): Generator<any, any, any> {
       try {
         const res = yield call(projectCategoryService.createCategory, payload);
+        if (!res?.success) {
+          message.error(res?.message || '分类创建失败');
+          return null;
+        }
         yield put({ type: 'upsertCategory', payload: res.data });
         message.success('分类创建成功');
         return res;
@@ -102,6 +124,10 @@ export default {
     ): Generator<any, any, any> {
       try {
         const res = yield call(projectCategoryService.updateCategory, payload);
+        if (!res?.success) {
+          message.error(res?.message || '分类更新失败');
+          return null;
+        }
         yield put({ type: 'upsertCategory', payload: res.data });
         message.success('分类更新成功');
         return res;
@@ -117,7 +143,13 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(projectCategoryService.deleteCategory, { id: payload });
+        const res = yield call(projectCategoryService.deleteCategory, {
+          id: payload,
+        });
+        if (!res?.success) {
+          message.error(res?.message || '分类删除失败');
+          return false;
+        }
         yield put({ type: 'removeCategory', payload });
         message.success('分类删除成功');
         return true;
@@ -133,10 +165,17 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(projectCategoryService.batchDeleteCategories, {
+        const res = yield call(projectCategoryService.batchDeleteCategories, {
           ids: payload,
         });
-        yield put({ type: 'fetchCategoryList' });
+        if (!res?.success) {
+          message.error(res?.message || '批量删除失败');
+          return false;
+        }
+        // 乐观删除：使用后端返回的 deletedIds（含所有后代）直接从 model 中移除，不再重新请求
+        const deletedIds: number[] =
+          res?.data?.deletedIds || payload.map(Number);
+        yield put({ type: 'removeCategories', payload: deletedIds });
         message.success('批量删除成功');
         return true;
       } catch (e) {
@@ -158,8 +197,22 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(projectCategoryService.batchMoveCategories, payload);
-        yield put({ type: 'fetchCategoryList' });
+        const res = yield call(
+          projectCategoryService.batchMoveCategories,
+          payload,
+        );
+        if (!res?.success) {
+          message.error(res?.message || '批量移动失败');
+          return false;
+        }
+        // 乐观更新：使用后端返回的全部分类列表直接替换，不再重新请求
+        const categories: ProjectCategoryItem[] = res?.data?.categories || [];
+        if (categories.length > 0) {
+          yield put({ type: 'saveCategoryList', payload: categories });
+        } else {
+          // 兜底：如果后端未返回分类列表，重新获取
+          yield put({ type: 'fetchCategoryList' });
+        }
         message.success('批量移动成功');
         return true;
       } catch (e) {
@@ -174,10 +227,17 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(projectCategoryService.saveCategorySort, {
+        const res = yield call(projectCategoryService.saveCategorySort, {
           sorts: payload,
         });
-        yield put({ type: 'fetchCategoryList' });
+        if (!res?.success) {
+          message.error(res?.message || '排序保存失败');
+          return false;
+        }
+        // 乐观更新：使用后端返回的全部分类列表直接替换，不再重新请求
+        const categories: ProjectCategoryItem[] =
+          res?.data?.categories || payload;
+        yield put({ type: 'saveCategoryList', payload: categories });
         message.success('排序保存成功');
         return true;
       } catch (e) {

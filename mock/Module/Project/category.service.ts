@@ -2,7 +2,7 @@
 // 分类服务层
 // 职责：处理分类相关的核心业务逻辑，调用数据库（MockTable）和缓存（Redis）
 
-import { BusinessError } from '../../Core';
+import { BusinessError, ErrorCodes } from '../../Core';
 import { redis } from '../../Core/redis';
 import type { MockProject, MockProjectCategory } from '../../Entities/project';
 import {
@@ -11,18 +11,29 @@ import {
   categoryInfoCache,
   categoryMongoCollection,
   categoryTable,
-  initCategoryCache,
   projectTable,
 } from '../../Entities/project';
 import type {
   BatchDeleteCategoriesRequest,
+  BatchDeleteCategoriesResponse,
   BatchMoveCategoriesRequest,
   BatchMoveCategoriesResponse,
-  CategoryWithProjectCount,
+  CategoryWithStats,
   CreateCategoryRequest,
+  DeleteCategoryResponse,
   SaveCategorySortRequest,
+  SaveCategorySortResponse,
   UpdateCategoryRequest,
 } from './category.dto';
+
+// ============================================================================
+// Redis 缓存前缀常量（模块级，所有函数和类方法共享）
+// ============================================================================
+const INFO_PREFIX = 'project:category:info:';
+const ORDER_PREFIX = 'project:category:order:';
+const COUNT_PREFIX = 'project:category:count:';
+const CHAIN_PREFIX = 'project:category:chain:';
+const PROJECTS_PREFIX = 'project:category:projects:';
 
 // ============================================================================
 // 分类缓存辅助函数
@@ -48,90 +59,6 @@ function hashToCategory(hashData: Record<string, string>): MockProjectCategory {
   };
 }
 
-const checkCanDeleteBatch = async (
-  ids: number[],
-  selectedIds?: Set<number>,
-): Promise<Map<number, { canDelete: boolean; reason: string }>> => {
-  const COUNT_PREFIX = 'project:category:count:';
-  const result = new Map<number, { canDelete: boolean; reason: string }>();
-
-  if (ids.length === 0) {
-    return result;
-  }
-
-  // 1. 一次从缓存获取分类列表（缓存永久 TTL，未命中时冷启动初始化）
-  let allCategories: MockProjectCategory[] =
-    (await getCategoryListFromCache(false)) ?? [];
-  if (allCategories.length === 0) {
-    allCategories = (await initCategoryCache()).map(
-      ({ project_count, ...cat }) => cat,
-    );
-  }
-
-  // 2. 使用 Pipeline 批量读取所有 ID 的计数器
-  const countPipeline = redis.pipeline();
-  for (const id of ids) {
-    countPipeline.get(`${COUNT_PREFIX}${id}`);
-  }
-  const countResults = await countPipeline.execAsync();
-
-  // 构建 ID → 计数器的 Map
-  const projectCountMap = new Map<number, number | null>();
-  ids.forEach((id, index) => {
-    const countStr = countResults[index] as string | null;
-    projectCountMap.set(id, countStr !== null ? Number(countStr) : null);
-  });
-
-  // 3. 对每个 ID 进行校验
-  for (const id of ids) {
-    // 3.1 存在未被选中的子分类 → 禁止删除
-    if (
-      allCategories.some((c) => c.parent_id === id && !selectedIds?.has(c.id))
-    ) {
-      result.set(id, {
-        canDelete: false,
-        reason: '存在子分类，请先删除子分类',
-      });
-      continue;
-    }
-
-    // 3.2 该分类及后代下存在文集 → 禁止删除
-    const projectCount = projectCountMap.get(id);
-    let hasProjects: boolean;
-
-    if (projectCount !== null && projectCount !== undefined) {
-      // 缓存命中：直接使用计数器（O(1)）
-      hasProjects = projectCount > 0;
-    } else {
-      // 缓存未命中：从数据库计算（兜底）
-      const allProjects = await projectTable.findAll();
-      const getAllIds = (parentId: number): number[] => {
-        const ids = [parentId];
-        allCategories
-          .filter((c) => c.parent_id === parentId)
-          .forEach((c) => ids.push(...getAllIds(c.id)));
-        return ids;
-      };
-      hasProjects = allProjects.some((p) =>
-        getAllIds(id).includes(p.project_category_id),
-      );
-    }
-
-    if (hasProjects) {
-      result.set(id, {
-        canDelete: false,
-        reason: '该分类下存在文集，无法删除',
-      });
-      continue;
-    }
-
-    // 3.3 校验通过
-    result.set(id, { canDelete: true, reason: '' });
-  }
-
-  return result;
-};
-
 /**
  * 从缓存读取分类祖先链路
  * @param categoryId 分类 ID
@@ -144,11 +71,12 @@ async function getCategoryChainFromCache(categoryId: number): Promise<{
   children: number[]; // 直接子节点 ID 列表（替代 children_count，用途更广）
 } | null> {
   // 使用 Pipeline 批量读取，减少网络往返
+  // 注意：categoryChainCache.prefix 未被 createCache 暴露，需使用硬编码前缀
   const pipeline = redis.pipeline();
-  pipeline.hget(`${categoryChainCache.prefix}${categoryId}`, 'chain');
-  pipeline.hget(`${categoryChainCache.prefix}${categoryId}`, 'ancestors');
-  pipeline.hget(`${categoryChainCache.prefix}${categoryId}`, 'depth');
-  pipeline.hget(`${categoryChainCache.prefix}${categoryId}`, 'children');
+  pipeline.hget(`${CHAIN_PREFIX}${categoryId}`, 'chain');
+  pipeline.hget(`${CHAIN_PREFIX}${categoryId}`, 'ancestors');
+  pipeline.hget(`${CHAIN_PREFIX}${categoryId}`, 'depth');
+  pipeline.hget(`${CHAIN_PREFIX}${categoryId}`, 'children');
   const results = await pipeline.execAsync();
 
   const chainStr = results[0] as string | null;
@@ -346,60 +274,39 @@ function calculateAndApplyCounterDiff(
 }
 
 /**
- * 从缓存获取全部分类列表
+ * 从 Redis 缓存获取分类列表
  *
- * 【缓存架构】五个独立缓存管理器（永久 TTL，每天凌晨 4 点全量重建）
- * - categoryOrderCache (List)：排序后的分类 ID 列表
- * - categoryInfoCache (Hash)：每个分类的详情
- * - categoryCountCache (String)：每个分类的文集数（含后代）
- * - categoryChainCache (Hash)：每个分类的祖先链路
- * - categoryProjectsCache (Set)：每个分类直接挂载的文集 ID 集合
+ * 读取 4 类缓存：order（排序索引）+ info（详情）+ count（文集数）+ projects（文集 ID）
+ * 使用 Pipeline 批量读取，1 次网络往返获取 N 个分类的全部数据
  *
- * 【性能优化】
- * - 使用 Redis Pipeline 批量读取，将 2N+1 次调用减少为 2 次 Pipeline 调用
- * - 当 includeCount=false 时，不读取计数器，Pipeline 命令数减少一半
- *
- * @param includeCount 是否包含 project_count 字段（默认 true）
- * @returns 分类列表，缓存未命中时返回 null
+ * @returns 分类列表，缓存不存在或不完整时返回 null
  */
-async function getCategoryListFromCache(
-  includeCount: boolean = true,
-): Promise<Array<MockProjectCategory & { project_count?: number }> | null> {
-  const INFO_PREFIX = 'project:category:info:';
-  const ORDER_PREFIX = 'project:category:order:';
-  const COUNT_PREFIX = 'project:category:count:';
-
-  // 1. 读取排序索引
-  const orderPipeline = redis.pipeline();
-  orderPipeline.lrange(`${ORDER_PREFIX}all`, 0, -1);
-  const orderResults = await orderPipeline.execAsync();
-  const orderedIds = orderResults[0] as number[] | null;
+async function getCategoryListFromCache(): Promise<CategoryWithStats[] | null> {
+  // 1. 读取排序索引（单 key，直接读取无需 pipeline）
+  const orderedIds = (await redis.lrange(`${ORDER_PREFIX}all`, 0, -1)) as
+    | number[]
+    | null;
   if (!orderedIds || orderedIds.length === 0) return null;
 
-  // 2. 批量读取分类详情（和计数器）
+  // 2. 批量读取分类详情、计数器和文集 ID 集合
   const dataPipeline = redis.pipeline();
   for (const id of orderedIds) {
     dataPipeline.hgetAll(`${INFO_PREFIX}${id}`);
-    if (includeCount) {
-      dataPipeline.get(`${COUNT_PREFIX}${id}`);
-    }
+    dataPipeline.get(`${COUNT_PREFIX}${id}`);
+    dataPipeline.smembers(`${PROJECTS_PREFIX}${id}`);
   }
   const dataResults = await dataPipeline.execAsync();
 
-  // 3. 组装结果（单循环 + 条件展开）
-  const result: Array<MockProjectCategory & { project_count?: number }> = [];
+  // 3. 组装结果（每个分类 3 个结果：hash + count + project_ids）
+  const result: CategoryWithStats[] = [];
   for (let i = 0; i < orderedIds.length; i++) {
-    const hashData = dataResults[includeCount ? i * 2 : i] as Record<
-      string,
-      string
-    > | null;
+    const hashData = dataResults[i * 3] as Record<string, string> | null;
     if (!hashData || Object.keys(hashData).length === 0) return null;
 
     result.push({
       ...hashToCategory(hashData),
-      ...(includeCount && {
-        project_count: Number(dataResults[i * 2 + 1] ?? 0),
-      }),
+      project_count: Number(dataResults[i * 3 + 1] ?? 0),
+      project_ids: (dataResults[i * 3 + 2] as number[]) || [],
     });
   }
 
@@ -407,30 +314,18 @@ async function getCategoryListFromCache(
 }
 
 /**
- * 获取全部分类列表（带多级降级）
+ * 获取分类列表（带多级降级）
  *
- * 【降级顺序】Redis（L3）→ MongoDB（L2）→ 数据库/冷启动（兜底）
+ * 降级顺序：Redis 缓存 → MongoDB → MockTable 内存数据库
+ * 所有层级统一返回 CategoryWithStats 格式（含 project_count + project_ids）
+ * MongoDB 和数据库结果按 parent_id + sort 排序
  *
- * 【用途】统一所有分类管理函数的数据获取逻辑，避免重复代码
- *
- * @param options 配置选项
- * @param options.useColdStart 最后是否使用冷启动（true=冷启动初始化 Redis，false=直接从数据库获取）
- * @param options.sort 是否排序（默认 true，按 parent_id + sort）
- * @param options.includeCount 是否包含 project_count 字段（默认 false）
- * @returns 分类列表（includeCount=true 时带 project_count，否则为纯分类数据）
+ * @returns 分类列表（永不返回 null，最差返回空数组）
  */
-async function getAllCategoriesWithFallback(
-  options: {
-    useColdStart?: boolean;
-    sort?: boolean;
-    includeCount?: boolean;
-  } = {},
-): Promise<MockProjectCategory[] | CategoryWithProjectCount[]> {
-  const { useColdStart = true, sort = true, includeCount = false } = options;
-
+async function getAllCategoriesWithFallback(): Promise<CategoryWithStats[]> {
   // ========== 1. 优先从 Redis（L3）缓存获取 ==========
   try {
-    const cachedCategories = await getCategoryListFromCache(includeCount);
+    const cachedCategories = await getCategoryListFromCache();
     if (cachedCategories && cachedCategories.length > 0) {
       return cachedCategories;
     }
@@ -440,54 +335,30 @@ async function getAllCategoriesWithFallback(
 
   // ========== 2. 降级到 MongoDB（L2）获取 ==========
   try {
-    const query = categoryMongoCollection.find({});
-    const mongoCategories = sort
-      ? await query.sort({ parent_id: 1, sort: 1 }).toArray()
-      : await query.toArray();
+    const mongoCategories = await categoryMongoCollection
+      .find({})
+      .sort({ parent_id: 1, sort: 1 })
+      .toArray();
 
     if (mongoCategories && mongoCategories.length > 0) {
-      if (includeCount) {
-        // 保留 project_count 字段，返回带文集数量的分类数据
-        return mongoCategories.map((cat) => ({
-          id: cat.id,
-          name: cat.name,
-          parent_id: cat.parent_id,
-          sort: cat.sort,
-          icon: cat.icon,
-          description: cat.description,
-          create_time: cat.create_time,
-          project_count: cat.project_count ?? 0,
-        }));
-      } else {
-        // 去掉 project_count 和 children 统计字段，返回纯分类数据
-        return mongoCategories.map(
-          ({ project_count, children, ...cat }) => cat,
-        );
-      }
+      // 统一返回带统计字段的分类数据
+      return mongoCategories.map((cat) => ({
+        ...cat,
+        project_count: cat.project_count ?? 0,
+        project_ids: cat.project_ids ?? [],
+      }));
     }
   } catch (error) {
-    console.warn(
-      '[CategoryCache] MongoDB 读取失败，降级到数据库/冷启动:',
-      error,
-    );
+    console.warn('[CategoryCache] MongoDB 读取失败，降级到数据库:', error);
   }
 
-  // ========== 3. 最后降级（数据库或冷启动）==========
-  if (useColdStart) {
-    // 冷启动：初始化 Redis 缓存
-    const initResult = await initCategoryCache();
-    if (includeCount) {
-      // 直接返回带 project_count 的结果
-      return initResult;
-    } else {
-      // 去掉 project_count 字段
-      return initResult.map(({ project_count, ...cat }) => cat);
-    }
-  } else {
-    // 直接从数据库（MockTable）获取
-    const dbCategories = await categoryTable.findAll();
-    return dbCategories ?? [];
-  }
+  // ========== 3. 最后降级到数据库（MockTable）==========
+  const dbCategories = await categoryTable.findAll();
+  return (dbCategories ?? []).map((cat) => ({
+    ...cat,
+    project_count: 0,
+    project_ids: [],
+  }));
 }
 
 // ============================================================================
@@ -496,76 +367,152 @@ async function getAllCategoriesWithFallback(
 
 class CategoryService {
   /**
-   * 获取分类列表（含后代文集数汇总）
-   * 【降级顺序】Redis（L3）→ MongoDB（L2）→ 冷启动（兜底）
-   * @returns 带 project_count 的分类列表
+   * 根据 ID 获取分类（三级降级：Redis → MongoDB → 数据库）
+   *
+   * @param id 分类 ID
+   * @returns 分类对象，不存在时返回 null
    */
-  async getCategoryListWithProjectCount(): Promise<CategoryWithProjectCount[]> {
-    // 使用通用函数，includeCount=true 返回带 project_count 的分类列表
-    // 降级顺序：Redis（L3）→ MongoDB（L2）→ 冷启动（兜底）
-    return getAllCategoriesWithFallback({
-      includeCount: true,
-      useColdStart: true,
-    }) as Promise<CategoryWithProjectCount[]>;
+  private async getCategoryById(id: number): Promise<CategoryWithStats | null> {
+    // L3：Redis 缓存（单个 pipeline 同时获取详情 + 统计字段）
+    const pipeline = redis.pipeline();
+    pipeline.hgetAll(`${INFO_PREFIX}${id}`);
+    pipeline.get(`${COUNT_PREFIX}${id}`);
+    pipeline.smembers(`${PROJECTS_PREFIX}${id}`);
+    const [categoryInfo, countStr, projectIds] = await pipeline.execAsync();
+
+    if (categoryInfo && Object.keys(categoryInfo).length > 0) {
+      return {
+        ...hashToCategory(categoryInfo as Record<string, string>),
+        project_count: Number(countStr) || 0,
+        project_ids: (projectIds as string[]).map(Number),
+      };
+    }
+
+    // L2：降级到 MongoDB（已包含 project_count 和 project_ids）
+    const mongoCategory = await categoryMongoCollection.findOne({ id });
+    if (mongoCategory) {
+      return mongoCategory as CategoryWithStats;
+    }
+
+    // L1：兜底数据库（主存储，绝对最新）
+    const dbCategory = await categoryTable.findById(id);
+    if (!dbCategory) return null;
+    return {
+      ...dbCategory,
+      project_count: Number(countStr) || 0,
+      project_ids: (projectIds as string[]).map(Number),
+    };
   }
 
   /**
-   * 创建分类（高级版，唯一创建逻辑）
+   * 获取同级分类 ID 列表（排除指定分类）
+   * - 非顶级：从父分类的 chain.children 获取
+   * - 顶级：从 order:all List 中筛选 parent_id = 0
    *
-   * 【功能】
-   * - 自动计算 sort（取同级最大 sort + 1，避免删除后重复）
-   * - 校验父分类存在性和同级名称不重复
-   * - 创建后精确写入 Redis 缓存和 MongoDB（不需要全量清除）
+   * @param parentId 父分类 ID（0 表示顶级）
+   * @param excludeId 需要排除的分类 ID
+   * @returns 同级分类 ID 数组
+   */
+  private async getSiblingCategoryIds(
+    parentId: number,
+    excludeId: number,
+  ): Promise<number[]> {
+    if (parentId !== 0) {
+      const parentChain = await categoryChainCache.hgetAll(String(parentId));
+      if (parentChain?.children) {
+        return (JSON.parse(parentChain.children) as number[]).filter(
+          (cid) => cid !== excludeId,
+        );
+      }
+      return [];
+    }
+
+    // 顶级分类：从 order:all List 中筛选 parent_id = 0
+    const orderedIds = (await redis.lrange(
+      `${ORDER_PREFIX}all`,
+      0,
+      -1,
+    )) as number[];
+    if (orderedIds.length === 0) return [];
+
+    const parentIdPipeline = redis.pipeline();
+    for (const oid of orderedIds) {
+      parentIdPipeline.hget(`${INFO_PREFIX}${oid}`, 'parent_id');
+    }
+    const parentIds = await parentIdPipeline.execAsync();
+    return orderedIds.filter(
+      (oid, i) => Number(parentIds[i]) === 0 && oid !== excludeId,
+    );
+  }
+
+  /**
+   * 获取分类列表
    *
-   * 【读取优先级】Redis（L3）→ MongoDB（L2）→ 冷启动
-   * - 与 getCategoryListWithProjectCount 保持一致
+   * 对外公开接口，内部调用 getAllCategoriesWithFallback 实现多级降级
+   * 返回格式：CategoryWithStats（含 project_count + project_ids）
    *
-   * 【性能优化】
-   * 1. 并行查询：父分类 + 同级分类 + 父链路一次 Promise.all，消除串行 await
-   * 2. 父分类链路一次 hgetAll 获取所有字段，避免重复读取
-   * 3. 排序插入位置：优先用同级分类内存计算（无 IO）；仅同级最小时从 order:all Redis List 定位，替代原 MongoDB $lt+sort+limit 查询
-   * 4. Redis 和 MongoDB 写入并行执行（Promise.all）
-   * 5. 完善错误处理，确保数据一致性
+   * @returns 分类列表
+   */
+  async getCategoryList(): Promise<CategoryWithStats[]> {
+    return getAllCategoriesWithFallback();
+  }
+
+  /**
+   * 创建分类（唯一创建逻辑）
+   *
+   * 【功能】自动计算 sort、校验父分类存在性和同级名称不重复、精确写入缓存
+   *
+   * 【数据读取】全部从 Redis 缓存读取，无 MongoDB 查询
+   * - 父分类链路：categoryChainCache（含 children）
+   * - 同级分类：parentChainData.children + categoryInfoCache Pipeline 批量获取
+   *
+   * 【排序插入位置】
+   * - 优先从同级分类内存计算（反向遍历找最大的 sort < 新分类）
+   * - 同级最小时从 order:all List 找第一个 parent_id >= parentId 的位置
+   *
+   * 【写入】Redis Pipeline + MongoDB insertOne 并行执行（Promise.all）
    *
    * @param data 请求参数
-   * @returns 创建的分类（含 project_count）
+   * @returns 创建的分类（含 project_count + project_ids）
    */
-  async createCategoryAdvanced(
+  async createCategory(
     data: CreateCategoryRequest,
-  ): Promise<CategoryWithProjectCount> {
+  ): Promise<CategoryWithStats> {
     const parentId = data.parent_id ?? 0;
-    const INFO_PREFIX = 'project:category:info:';
-    const ORDER_PREFIX = 'project:category:order:';
-    const COUNT_PREFIX = 'project:category:count:';
-    const CHAIN_PREFIX = 'project:category:chain:';
 
-    // ========== 1. 并行查询所有需要的数据（一次 Promise.all，消除重复查询）==========
-    // - parentCategory：父分类存在性校验
-    // - siblingCategories：同级分类（名称校验、maxSort、插入位置）
-    // - parentChainData：父分类的祖先链路（计算新分类的 chain/depth/ancestors）
-    // 注：前一个 parent_id 的 pivot 不再查 MongoDB，改为从 order:all Redis List 计算
-    const [parentCategory, siblingCategories, parentChainData] =
-      await Promise.all([
-        parentId !== 0
-          ? categoryMongoCollection.findOne({ id: parentId })
-          : Promise.resolve(null),
-        categoryMongoCollection
-          .find({ parent_id: parentId })
-          .sort({ sort: 1 })
-          .toArray(),
-        parentId !== 0
-          ? categoryChainCache.hgetAll(String(parentId))
-          : Promise.resolve(null),
-      ]);
+    // ========== 1. 从 Redis 缓存获取所有需要的数据 ==========
+    // - parentChainData：父分类的链路数据（含 children，用于判断存在性和获取同级分类 ID）
+    // - siblingCategories：从 parentChainData.children 批量获取同级分类详情
+    const parentChainData =
+      parentId !== 0
+        ? await categoryChainCache.hgetAll(String(parentId))
+        : null;
 
-    // 1.1 父分类存在性校验
-    if (parentId !== 0 && !parentCategory) {
+    // 1.1 父分类存在性校验（通过链路缓存是否存在判断）
+    if (parentId !== 0 && !parentChainData) {
       throw new BusinessError('父分类不存在');
     }
 
+    // 1.2 从父分类的 children 获取同级分类 ID，批量从 info 缓存获取详情
+    const siblingIds: number[] = parentChainData?.children
+      ? JSON.parse(parentChainData.children)
+      : [];
+    const siblingPipeline = redis.pipeline();
+    for (const id of siblingIds) {
+      siblingPipeline.hgetAll(`${INFO_PREFIX}${id}`);
+    }
+    const siblingResults = await siblingPipeline.execAsync();
+    const siblingCategories: MockProjectCategory[] = siblingResults
+      .filter((hashData) => hashData && Object.keys(hashData).length > 0)
+      .map((hashData) => hashToCategory(hashData as Record<string, string>))
+      .sort((a, b) => a.sort - b.sort);
+
     // 1.2 同级名称重复校验
     if (siblingCategories.some((c) => c.name === data.name)) {
-      throw new BusinessError('同级分类下已存在相同名称的分类');
+      throw new BusinessError(
+        '同级分类下已存在相同名称的分类',
+        ErrorCodes.Project.CATEGORY_NAME_EXISTS,
+      );
     }
 
     // 1.3 自动计算 sort（取同级最大 sort + 1）
@@ -602,20 +549,21 @@ class CategoryService {
 
     // 3.2 计算排序索引的准确插入位置
     // 排序规则：先按 parent_id 升序，再按 sort 升序
-    // 优化：不再用 MongoDB $lt+sort+limit 查询前一个 parent_id，改为从 order:all Redis List 计算
     let pivotId: number | null = null;
     let insertAtBeginning = false;
 
-    // 找到同级中 sort 小于新分类的最大的那个（插入到它后面）
-    const smallerSiblings = siblingCategories.filter(
-      (c) => c.sort < newCategory.sort,
-    );
-    if (smallerSiblings.length > 0) {
-      // 大多数情况：同级中有更小的 sort，直接取最大的那个作为 pivot（无额外 IO）
-      pivotId = smallerSiblings[smallerSiblings.length - 1].id;
-    } else {
+    // siblingCategories 已按 sort 升序排序，从后向前找第一个 sort < newCategory.sort 的分类作为 pivot
+    // 优化：无需 filter 创建新数组，直接反向遍历，找到即停止
+    for (let i = siblingCategories.length - 1; i >= 0; i--) {
+      if (siblingCategories[i].sort < newCategory.sort) {
+        pivotId = siblingCategories[i].id;
+        break;
+      }
+    }
+
+    if (pivotId === null) {
       // 新分类是同级最小的，或同级没有其他分类
-      // 从 order:all Redis List（已按 parent_id+sort 有序）中找前一个位置
+      // 从 order:all Redis List（已按 parent_id+sort 有序）中找插入位置
       const orderedIds = (await redis.lrange(
         `${ORDER_PREFIX}all`,
         0,
@@ -625,36 +573,27 @@ class CategoryService {
       if (orderedIds.length === 0) {
         // List 为空，插入到最前面
         insertAtBeginning = true;
-      } else if (siblingCategories.length > 0) {
-        // 有同级分类：找第一个同级分类在 List 中的位置，取前一个位置的 ID
-        // siblingCategories 已按 sort 升序，第一个就是同级最小的
-        const firstSiblingIndex = orderedIds.indexOf(siblingCategories[0].id);
-        if (firstSiblingIndex > 0) {
-          pivotId = orderedIds[firstSiblingIndex - 1];
-        } else {
-          // 同级分类在 List 最前面，新分类也插入到最前面
-          insertAtBeginning = true;
-        }
       } else {
-        // 同级无分类（该 parent_id 下第一个分类）：
-        // 从 List 末尾向前找第一个 parent_id < 当前 parentId 的分类
+        // 统一逻辑：找第一个 parent_id >= parentId 的位置，插入到它前面
+        // - 有同级分类：第一个同级分类的 parent_id = parentId，即插入到同级分组最前面
+        // - 同级无分类：第一个 parent_id > parentId 的位置
         const infoPipeline = redis.pipeline();
         for (const id of orderedIds) {
           infoPipeline.hget(`${INFO_PREFIX}${id}`, 'parent_id');
         }
         const parentIdResults = await infoPipeline.execAsync();
 
-        let pivotIndex = -1;
-        for (let i = orderedIds.length - 1; i >= 0; i--) {
-          if (Number(parentIdResults[i]) < parentId) {
-            pivotIndex = i;
+        let insertIndex = orderedIds.length; // 默认插入到末尾
+        for (let i = 0; i < orderedIds.length; i++) {
+          if (Number(parentIdResults[i]) >= parentId) {
+            insertIndex = i;
             break;
           }
         }
-        if (pivotIndex >= 0) {
-          pivotId = orderedIds[pivotIndex];
-        } else {
+        if (insertIndex === 0) {
           insertAtBeginning = true;
+        } else {
+          pivotId = orderedIds[insertIndex - 1];
         }
       }
     }
@@ -674,13 +613,14 @@ class CategoryService {
     });
 
     // 5.2 排序索引（List）：使用 linsert 准确插入
+    const orderKey = `${ORDER_PREFIX}all`;
     if (insertAtBeginning) {
-      pipeline.lpush(`${ORDER_PREFIX}all`, newCategory.id);
+      pipeline.lpush(orderKey, newCategory.id);
     } else if (pivotId !== null) {
-      pipeline.linsert(`${ORDER_PREFIX}all`, 'AFTER', pivotId, newCategory.id);
+      pipeline.linsert(orderKey, 'AFTER', pivotId, newCategory.id);
     } else {
       console.warn('[CategoryCache] 未找到插入位置，使用 rpush 兜底');
-      pipeline.rpush(`${ORDER_PREFIX}all`, newCategory.id);
+      pipeline.rpush(orderKey, newCategory.id);
     }
 
     // 5.3 祖先链路（Hash）：chain/ancestors/depth 冗余存储，空间换时间（读取时免 parse+slice）
@@ -714,32 +654,12 @@ class CategoryService {
         // Redis 写入
         pipeline.execAsync(),
         // MongoDB 写入：插入新分类
+        // 注：MongoDB 不存储子分类 ID，通过 parent_id 维护关系
         categoryMongoCollection.insertOne({
           ...newCategory,
           project_count: 0, // 新创建的分类没有文集
-          children: [], // 新创建的分类没有子分类
+          project_ids: [], // 新创建的分类没有关联文集
         }),
-        // MongoDB 写入：更新父分类的 children（如果有父分类）
-        parentId !== 0
-          ? (async () => {
-              const parentCategory = await categoryMongoCollection.findOne({
-                id: parentId,
-              });
-              if (parentCategory) {
-                const mongoParentChildren = parentCategory.children || [];
-                if (!mongoParentChildren.includes(newCategory.id)) {
-                  await categoryMongoCollection.updateOne(
-                    { id: parentId },
-                    {
-                      $set: {
-                        children: [...mongoParentChildren, newCategory.id],
-                      },
-                    },
-                  );
-                }
-              }
-            })()
-          : Promise.resolve(),
       ]);
     } catch (error) {
       // 缓存写入失败，记录日志，等待定时重建修复
@@ -751,509 +671,247 @@ class CategoryService {
     }
 
     // ========== 7. 返回结果 ==========
-    return { ...newCategory, project_count: 0 };
+    return { ...newCategory, project_count: 0, project_ids: [] };
   }
 
   /**
-   * 更新分类
-   *
-   * 【功能】
-   * - 校验分类存在
-   * - 如果修改名称，校验同级不重复
-   * - 如果修改 parent_id，校验新父分类存在且不是自己的后代
-   * - 字段更新时精确更新 Hash；移动分类时精确更新缓存（不全量清除）
-   *
-   * 【读取优先级】Redis（L3）→ MongoDB（L2）→ 冷启动
-   * - 与 createCategoryAdvanced / getCategoryListWithProjectCount 保持一致
-   *
-   * 【性能优化】
-   * 1. 三级降级校验分类存在：Redis → MongoDB → 数据库
-   * 2. 移动分类时精确更新缓存（祖先链路、排序索引、父分类 children、计数器），不全量清除
-   * 3. 字段更新时使用 Pipeline 批量更新，减少多次 await
-   * 4. 利用 categoryChainCache 的 ancestors 字段快速判断后代关系
-   * 5. 计数器更新与 Pipeline、MongoDB 写入并行执行（Promise.all）
-   *
-   * @param id 分类 ID
-   * @param data 请求参数
-   * @returns 更新后的分类
+   * 更新分类（仅 name/icon/description；移动/排序由其他接口处理）
+   * 无变化时抛出 NO_CHANGES 错误
    */
   async updateCategory(
     id: number,
     data: UpdateCategoryRequest,
-  ): Promise<MockProjectCategory> {
-    const INFO_PREFIX = 'project:category:info:';
-    const ORDER_PREFIX = 'project:category:order:';
-    const CHAIN_PREFIX = 'project:category:chain:';
-
+  ): Promise<CategoryWithStats> {
     // ========== 1. 校验分类存在（三级降级：Redis → MongoDB → 数据库）==========
-    const categoryInfo = await categoryInfoCache.hgetAll(String(id));
-    let category: MockProjectCategory | null = null;
-
-    if (categoryInfo && Object.keys(categoryInfo).length > 0) {
-      // L3：Redis 缓存命中
-      category = hashToCategory(categoryInfo);
-    } else {
-      // L2：降级到 MongoDB
-      const mongoCategory = await categoryMongoCollection.findOne({ id });
-      if (mongoCategory) {
-        category = mongoCategory;
-      } else {
-        // L1：兜底数据库（主存储，绝对最新）
-        category = (await categoryTable.findById(id)) ?? null;
-      }
-    }
+    const category = await this.getCategoryById(id);
     if (!category) {
       throw new BusinessError('分类不存在', 404);
     }
 
     const updateData: Partial<MockProjectCategory> = {};
-    const isMoving =
-      data.parent_id !== undefined && data.parent_id !== category.parent_id;
-    const isSortChanged =
-      data.sort !== undefined && data.sort !== category.sort;
-    const targetParentId = data.parent_id ?? category.parent_id;
-    const oldParentId = category.parent_id;
 
-    // ========== 2. 并行查询所有受影响的数据（一次 Promise.all，不全量获取）==========
-    // - targetSiblingCategories：目标同级分类（名称校验、排序插入位置）
-    // - prevParentCategory：前一个 parent_id 的最后一个分类（排序插入位置的 pivot）
-    // - newParentChain：新父分类的祖先链路（计算新 chain/depth、判断后代关系）
-    // - oldParentChain：旧父分类的祖先链路（更新旧父分类的 children，避免串行查询）
-    const [
-      targetSiblingCategories,
-      prevParentCategory,
-      newParentChain,
-      oldParentChain,
-    ] = await Promise.all([
-      categoryMongoCollection
-        .find({ parent_id: targetParentId, id: { $ne: id } })
-        .sort({ sort: 1 })
-        .toArray(),
-      categoryMongoCollection
-        .find({ parent_id: { $lt: targetParentId } })
-        .sort({ parent_id: -1, sort: -1 })
-        .limit(1)
-        .toArray(),
-      isMoving && targetParentId !== 0
-        ? categoryChainCache.hgetAll(String(targetParentId))
-        : Promise.resolve(null),
-      isMoving && oldParentId !== 0
-        ? categoryChainCache.hgetAll(String(oldParentId))
-        : Promise.resolve(null),
-    ]);
-
-    // ========== 3. 业务校验 ==========
-    // 3.1 名称修改：校验同级不重复（使用 targetSiblingCategories，不需要全量数据）
-    if (data.name !== undefined) {
-      if (targetSiblingCategories.some((c) => c.name === data.name)) {
-        throw new BusinessError('同级分类下已存在相同名称的分类');
-      }
+    // ========== 2. 预计算变化字段（无变化时尽早返回，避免后续 IO）==========
+    // 注：icon/description 统一转为字符串，确保 Redis hset 和 MongoDB 存储一致
+    if (data.name !== undefined && data.name !== category.name) {
       updateData.name = data.name;
     }
-
-    // 3.2 parent_id 修改：校验新父分类存在且不是自己的后代
-    if (isMoving) {
-      const newParentId = data.parent_id!;
-      if (newParentId !== 0) {
-        // 校验新父分类存在（使用已查询的 newParentChain，避免重复查询）
-        if (!newParentChain || Object.keys(newParentChain).length === 0) {
-          // 缓存未命中，兜底查询数据库
-          const newParentExists = await categoryTable.findById(newParentId);
-          if (!newParentExists) {
-            throw new BusinessError('父分类不存在');
-          }
-        }
-
-        // 利用 categoryChainCache 的 ancestors 字段快速判断后代关系
-        // 如果新父分类的祖先链中包含当前分类 id，说明移动到了自己的后代下
-        if (newParentChain?.ancestors) {
-          const newParentAncestors = JSON.parse(
-            newParentChain.ancestors,
-          ) as number[];
-          if (newParentAncestors.includes(id) || newParentId === id) {
-            throw new BusinessError('不能将分类移动到其自身的子分类下');
-          }
-        }
-      }
-      updateData.parent_id = newParentId;
+    if (data.icon !== undefined && (data.icon || '') !== category.icon) {
+      updateData.icon = data.icon || '';
+    }
+    if (
+      data.description !== undefined &&
+      (data.description || '') !== category.description
+    ) {
+      updateData.description = data.description || '';
     }
 
-    // 3.3 其他字段直接更新
-    if (data.sort !== undefined) updateData.sort = data.sort;
-    if (data.icon !== undefined) updateData.icon = data.icon;
-    if (data.description !== undefined)
-      updateData.description = data.description;
+    // 无实际变化时抛出业务错误，前端可直接提示用户
+    if (Object.keys(updateData).length === 0) {
+      throw new BusinessError(
+        '数据无变化，不需要修改',
+        ErrorCodes.Project.NO_CHANGES,
+      );
+    }
+
+    // ========== 3. 名称修改：校验同级不重复 ==========
+    if (updateData.name !== undefined) {
+      const siblingIds = await this.getSiblingCategoryIds(
+        category.parent_id,
+        id,
+      );
+
+      // Pipeline 批量获取同级分类详情
+      const siblingPipeline = redis.pipeline();
+      for (const sid of siblingIds) {
+        siblingPipeline.hgetAll(`${INFO_PREFIX}${sid}`);
+      }
+      const siblingResults = await siblingPipeline.execAsync();
+      const siblingCategories = siblingResults
+        .filter((hashData) => hashData && Object.keys(hashData).length > 0)
+        .map((hashData) => hashToCategory(hashData as Record<string, string>));
+
+      if (siblingCategories.some((c) => c.name === updateData.name)) {
+        throw new BusinessError(
+          '同级分类下已存在相同名称的分类',
+          ErrorCodes.Project.CATEGORY_NAME_EXISTS,
+        );
+      }
+    }
 
     // ========== 4. 执行数据库更新 ==========
     const updatedCategory = await categoryTable.updateById(id, updateData);
 
     // ========== 5. 并行更新 Redis 和 MongoDB ==========
     try {
-      if (isMoving || isSortChanged) {
-        // ========== 5.1 移动分类或修改 sort：更新排序索引 + 其他缓存 ==========
-        const newParentId = data.parent_id ?? category.parent_id;
-
-        // 5.1.1 计算新的祖先链路（仅移动时需要，使用已查询的 newParentChain）
-        let newAncestors: number[] = [];
-        let newDepth = 0;
-        let newChain: number[] = [id];
-        if (isMoving) {
-          if (newParentId !== 0 && newParentChain?.chain) {
-            newAncestors = JSON.parse(newParentChain.chain) as number[];
-            newDepth =
-              Number(newParentChain.depth ?? newAncestors.length - 1) + 1;
-          }
-          newChain = [...newAncestors, id];
-        }
-
-        // 5.1.2 计算排序索引的新插入位置（使用 targetSiblingCategories + prevParentCategory）
-        // 排序规则：先按 parent_id 升序，再按 sort 升序
-        let pivotId: number | null = null;
-        let insertAtBeginning = false;
-
-        // 找到目标同级中 sort 小于当前分类的最大的那个（插入到它后面）
-        const smallerSiblings = targetSiblingCategories.filter(
-          (c) => c.sort < updatedCategory!.sort,
-        );
-        if (smallerSiblings.length > 0) {
-          pivotId = smallerSiblings[smallerSiblings.length - 1].id;
-        } else if (prevParentCategory.length > 0) {
-          // 当前分类是同级最小的，或同级没有其他分类
-          // 插入到前一个 parent_id 的最后一个分类后面
-          pivotId = prevParentCategory[0].id;
-        } else {
-          // 没有前一个 parent_id，插入到列表最前面
-          insertAtBeginning = true;
-        }
-
-        // 5.1.3 构建 Redis Pipeline（无串行 await，所有数据已在前面并行查询）
-        const pipeline = redis.pipeline();
-
-        // 移动分类时：更新该分类的祖先链路（chain/ancestors/depth 冗余存储，空间换时间）
-        if (isMoving) {
-          pipeline.hmset(`${CHAIN_PREFIX}${id}`, {
-            chain: JSON.stringify(newChain),
-            depth: String(newDepth),
-            ancestors: JSON.stringify(newAncestors),
-            children: JSON.stringify(
-              categoryInfo?.children ? JSON.parse(categoryInfo.children) : [],
-            ),
-          });
-
-          // 更新旧父分类的 children（移除当前分类 ID，使用已查询的 oldParentChain）
-          if (oldParentId !== 0) {
-            const oldParentChildren = oldParentChain?.children
-              ? JSON.parse(oldParentChain.children)
-              : [];
-            pipeline.hset(
-              `${CHAIN_PREFIX}${oldParentId}`,
-              'children',
-              JSON.stringify(
-                oldParentChildren.filter((cid: number) => cid !== id),
-              ),
-            );
-          }
-
-          // 更新新父分类的 children（添加当前分类 ID，使用已查询的 newParentChain）
-          if (newParentId !== 0) {
-            const newParentChildren = newParentChain?.children
-              ? JSON.parse(newParentChain.children)
-              : [];
-            if (!newParentChildren.includes(id)) {
-              newParentChildren.push(id);
-              pipeline.hset(
-                `${CHAIN_PREFIX}${newParentId}`,
-                'children',
-                JSON.stringify(newParentChildren),
-              );
-            }
-          }
-        }
-
-        // 修改 sort 时：更新分类详情中的 sort 字段
-        if (isSortChanged && !isMoving) {
-          pipeline.hset(`${INFO_PREFIX}${id}`, 'sort', String(data.sort));
-        }
-
-        // 更新排序索引（先删除旧位置，再插入新位置）
-        pipeline.lrem(`${ORDER_PREFIX}all`, 0, id);
-        if (insertAtBeginning) {
-          pipeline.lpush(`${ORDER_PREFIX}all`, id);
-        } else if (pivotId !== null) {
-          pipeline.linsert(`${ORDER_PREFIX}all`, 'AFTER', pivotId, id);
-        } else {
-          pipeline.rpush(`${ORDER_PREFIX}all`, id);
-        }
-
-        // 5.1.4 并行执行 Redis 和 MongoDB 更新
-        // MongoDB 使用原子操作 $pull/$push，避免"先查后改"
-        const mongoUpdates: Promise<any>[] = [
-          pipeline.execAsync(),
-          categoryMongoCollection.updateOne({ id }, { $set: updateData }),
-        ];
-
-        // 移动分类时：MongoDB 原子更新父分类的 children
-        if (isMoving) {
-          if (oldParentId !== 0) {
-            // $pull：原子移除
-            mongoUpdates.push(
-              categoryMongoCollection.updateOne(
-                { id: oldParentId },
-                { $pull: { children: id } },
-              ),
-            );
-          }
-          if (newParentId !== 0) {
-            // $push + $each：原子添加（自动去重）
-            mongoUpdates.push(
-              categoryMongoCollection.updateOne(
-                { id: newParentId },
-                { $push: { children: { $each: [id], $position: 0 } } },
-              ),
-            );
-          }
-
-          // 移动分类时：并行更新计数器（旧祖先 DECRBY，新祖先 INCRBY）
-          // 与 Pipeline、MongoDB 更新并行，不增加串行等待
-          mongoUpdates.push(
-            (async () => {
-              const [allCategories, allProjects] = await Promise.all([
-                getAllCategoriesWithFallback({ useColdStart: false }),
-                projectTable.findAll(),
-              ]);
-              const updatedCategories = (
-                allCategories as MockProjectCategory[]
-              ).map((c) =>
-                c.id === id ? { ...c, parent_id: newParentId } : c,
-              );
-              return calculateAndApplyCounterDiff(
-                [id],
-                new Map([[id, oldParentId]]),
-                newParentId,
-                updatedCategories,
-                allProjects,
-              );
-            })(),
-          );
-        }
-
-        await Promise.all(mongoUpdates);
-      } else {
-        // ========== 5.2 普通字段更新：Pipeline 批量更新 Hash（不涉及排序索引）==========
-        const pipeline = redis.pipeline();
-        if (data.name !== undefined) {
-          pipeline.hset(`${INFO_PREFIX}${id}`, 'name', data.name);
-        }
-        if (data.icon !== undefined) {
-          pipeline.hset(`${INFO_PREFIX}${id}`, 'icon', data.icon || '');
-        }
-        if (data.description !== undefined) {
-          pipeline.hset(
-            `${INFO_PREFIX}${id}`,
-            'description',
-            data.description || '',
-          );
-        }
-
-        // 并行执行 Redis 和 MongoDB 更新
-        await Promise.all([
-          pipeline.execAsync(),
-          categoryMongoCollection.updateOne({ id }, { $set: updateData }),
-        ]);
-      }
+      await Promise.all([
+        categoryInfoCache.hset(
+          String(id),
+          updateData as Record<string, string>,
+        ),
+        categoryMongoCollection.updateOne({ id }, { $set: updateData }),
+      ]);
     } catch (error) {
-      // 缓存写入失败，记录日志，等待定时重建修复
       console.error(
         '[CategoryCache] 更新分类缓存写入失败，将在下次定时重建时修复:',
         error,
       );
     }
 
-    return updatedCategory!;
+    // ========== 6. 返回带统计字段的完整分类数据 ==========
+    // 统计字段不受 name/icon/description 更新影响，直接复用 getCategoryById 获取的数据
+    return {
+      ...updatedCategory!,
+      project_count: category.project_count,
+      project_ids: category.project_ids,
+    } as CategoryWithStats;
   }
 
   /**
-   * 删除分类（含校验：存在子分类或文集时禁止删除）
+   * 删除单条分类（含校验：存在子分类或文集时禁止删除）
    *
-   * 【功能】
-   * - 校验分类存在
-   * - 校验是否有子分类或文集（有则禁止删除）
-   * - 从数据库删除分类
-   * - 精确更新 Redis 缓存和 MongoDB（不全量清除）
-   *
-   * 【性能优化】
-   * 1. 利用缓存快速校验：categoryChainCache.children 判断子分类，categoryCountCache 判断文集数
-   * 2. 使用 Redis Pipeline 批量删除（排序索引/详情/计数器/祖先链路/文集列表）
-   * 3. 并行读取父分类信息（Redis + MongoDB），减少串行 await
-   * 4. 并行执行 Redis 和 MongoDB 写入（Promise.all）
-   * 5. 添加错误处理：数据库删除成功后，缓存失败不影响主流程，等待定时重建修复
+   * 【实现】batchDeleteCategories 的单条包装，校验和删除逻辑见批量删除
    *
    * @param id 分类 ID
+   * @returns 删除结果（含 deletedIds）
    */
-  async deleteCategoryWithCheck(id: number): Promise<null> {
+  async deleteCategory(id: number): Promise<DeleteCategoryResponse> {
     return this.batchDeleteCategories({ ids: [id] });
   }
 
   /**
-   * 批量删除分类（逐个校验，选中的子分类允许级联删除）
-   *
-   * 【功能】
-   * - 批量校验：使用 checkCanDeleteBatch 一次性校验所有 ID
-   * - 批量获取：使用 Pipeline 批量获取分类信息（同时用于校验提示和删除操作）
-   * - 批量删除：使用 bulkDelete 批量删除数据库记录
-   * - 精确更新缓存：Pipeline 批量删除 + 更新父分类 children
-   *
-   * 【性能优化】
-   * 1. 合并循环：一次 Pipeline 批量获取分类信息，同时用于校验失败提示和删除操作
-   * 2. 并行读取父分类信息：Redis + MongoDB 并行读取，减少串行 await
-   * 3. 并行执行 Redis 和 MongoDB 写入：Promise.all
-   * 4. 删除 categoryProjectsCache：清除被删分类的文集 ID 列表
-   * 5. 添加错误处理：数据库删除成功后，缓存失败不影响主流程，等待定时重建修复
-   *
-   * @param data 请求参数
+   * 批量删除分类（选中的子分类允许级联删除）
+   * 校验不通过时抛出错误，提示第一个不可删除的分类
    */
   async batchDeleteCategories(
     data: BatchDeleteCategoriesRequest,
-  ): Promise<null> {
-    const INFO_PREFIX = 'project:category:info:';
-    const ORDER_PREFIX = 'project:category:order:';
-    const COUNT_PREFIX = 'project:category:count:';
-    const CHAIN_PREFIX = 'project:category:chain:';
-    const PROJECTS_PREFIX = 'project:category:projects:';
-
+  ): Promise<BatchDeleteCategoriesResponse> {
     const idSet = new Set(data.ids.map(Number));
     const ids = Array.from(idSet);
 
-    // ========== 1. 批量校验（使用 checkCanDeleteBatch，一次性读取缓存）==========
-    const validationResults = await checkCanDeleteBatch(ids, idSet);
+    // ========== 1. 合并 Pipeline：同时获取 children（校验）+ ancestors（算parent_id）+ count（校验）==========
+    const checkPipeline = redis.pipeline();
+    ids.forEach((id) => {
+      checkPipeline.hget(`${CHAIN_PREFIX}${id}`, 'children');
+      checkPipeline.hget(`${CHAIN_PREFIX}${id}`, 'ancestors');
+      checkPipeline.get(`${COUNT_PREFIX}${id}`);
+    });
+    const checkResults = await checkPipeline.execAsync();
 
-    // ========== 2. 批量获取所有分类信息（一次 Pipeline，缓存未命中时批量查询数据库）==========
-    const infoPipeline = redis.pipeline();
-    for (const id of ids) {
-      infoPipeline.hgetAll(`${INFO_PREFIX}${id}`);
+    // ========== 2. 缓存未命中降级：只查询未命中的 ID 及其子分类 ==========
+    const missIds: number[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      if (
+        checkResults[i * 3] === null ||
+        checkResults[i * 3 + 1] === null ||
+        checkResults[i * 3 + 2] === null
+      ) {
+        missIds.push(ids[i]);
+      }
     }
-    const infoResults = await infoPipeline.execAsync();
 
-    // 解析结果，收集缓存未命中的 ID
-    const categoryMap = new Map<
-      number,
-      { id: number; name: string; parent_id: number }
-    >();
-    const missingIds: number[] = [];
+    let mongoCountMap: Map<number, number> | null = null;
+    let mongoChildrenMap: Map<number, number[]> | null = null;
+    if (missIds.length > 0) {
+      const mongoCategories = await categoryMongoCollection
+        .find({
+          $or: [{ id: { $in: missIds } }, { parent_id: { $in: missIds } }],
+        })
+        .project({ id: 1, parent_id: 1, project_count: 1 })
+        .toArray();
 
+      mongoCountMap = new Map();
+      mongoChildrenMap = new Map();
+      for (const cat of mongoCategories) {
+        if (missIds.includes(cat.id)) {
+          mongoCountMap.set(cat.id, cat.project_count ?? 0);
+        }
+        if (missIds.includes(cat.parent_id)) {
+          const children = mongoChildrenMap.get(cat.parent_id) ?? [];
+          children.push(cat.id);
+          mongoChildrenMap.set(cat.parent_id, children);
+        }
+      }
+    }
+
+    // ========== 3. 校验 + 收集父分类（复用第一步已获取的 ancestors，无需再次 IO）==========
+    const parentChildrenToRemove = new Map<number, number[]>();
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
-      const categoryInfo = infoResults[i] as Record<string, string> | null;
+      const childrenStr = checkResults[i * 3] as string | null;
+      const ancestorsStr = checkResults[i * 3 + 1] as string | null;
+      const countStr = checkResults[i * 3 + 2] as string | null;
 
-      if (categoryInfo && Object.keys(categoryInfo).length > 0) {
-        categoryMap.set(id, {
-          id: Number(categoryInfo.id),
-          name: categoryInfo.name || '未知分类',
-          parent_id: Number(categoryInfo.parent_id),
-        });
-      } else {
-        // 收集缓存未命中的 ID，稍后批量查询
-        missingIds.push(id);
-      }
-    }
-
-    // 缓存未命中时：三级降级（MongoDB → 数据库，避免串行 await）
-    if (missingIds.length > 0) {
-      // 先从 MongoDB 批量查询（L2）
-      const mongoCategories = await categoryMongoCollection
-        .find({ id: { $in: missingIds } })
-        .toArray();
-      const mongoHitIds = new Set(mongoCategories.map((c) => c.id));
-
-      // MongoDB 命中的直接使用
-      for (const cat of mongoCategories) {
-        categoryMap.set(cat.id, {
-          id: cat.id,
-          name: cat.name,
-          parent_id: cat.parent_id,
-        });
+      // 3.1 子分类校验
+      const children: number[] =
+        childrenStr !== null
+          ? JSON.parse(childrenStr)
+          : mongoChildrenMap?.get(id) ?? [];
+      if (children.some((cid) => !idSet.has(cid))) {
+        throw new BusinessError(
+          `分类ID:${id}，存在子分类，请先删除子分类`,
+          ErrorCodes.Project.DELETE_HAS_CHILDREN,
+          { failedId: id },
+        );
       }
 
-      // MongoDB 也未命中的，兜底到数据库（L1）
-      const stillMissingIds = missingIds.filter((id) => !mongoHitIds.has(id));
-      if (stillMissingIds.length > 0) {
-        const dbCategories = await categoryTable.findAll({
-          where: { id: stillMissingIds },
-        } as any);
-        for (const cat of dbCategories) {
-          categoryMap.set(cat.id, {
-            id: cat.id,
-            name: cat.name,
-            parent_id: cat.parent_id,
-          });
-        }
+      // 3.2 文集数校验
+      const projectCount =
+        countStr !== null ? Number(countStr) : mongoCountMap?.get(id) ?? 0;
+      if (projectCount > 0) {
+        throw new BusinessError(
+          `分类ID:${id}，该分类下存在文集，无法删除`,
+          ErrorCodes.Project.DELETE_HAS_PROJECTS,
+          { failedId: id },
+        );
       }
-    }
 
-    // 检查是否有校验失败的（直接从 categoryMap 获取名称，不需要再次读取）
-    for (const id of ids) {
-      const result = validationResults.get(id);
-      if (result && !result.canDelete) {
-        const categoryName = categoryMap.get(id)?.name || '未知分类';
-        throw new BusinessError(`「${categoryName}」${result.reason}`);
-      }
-    }
-
-    // ========== 3. 批量删除数据库记录（使用 bulkDelete）==========
-    const bulkDeleteOperations = ids.map((id) => ({ where: { id } }));
-    categoryTable.bulkDelete(bulkDeleteOperations);
-
-    // ========== 4. 收集需要更新的父分类信息 ==========
-    const parentChildrenToRemove = new Map<number, number[]>();
-    for (const category of categoryMap.values()) {
-      if (category.parent_id !== 0 && !idSet.has(category.parent_id)) {
-        if (!parentChildrenToRemove.has(category.parent_id)) {
-          parentChildrenToRemove.set(category.parent_id, []);
-        }
-        parentChildrenToRemove.get(category.parent_id)!.push(category.id);
+      // 3.3 校验通过，收集父分类（从已获取的 ancestors 算 parent_id）
+      const ancestors = ancestorsStr
+        ? (JSON.parse(ancestorsStr) as number[])
+        : [];
+      const parentId =
+        ancestors.length > 0 ? ancestors[ancestors.length - 1] : 0;
+      if (parentId !== 0 && !idSet.has(parentId)) {
+        const list = parentChildrenToRemove.get(parentId) ?? [];
+        list.push(id);
+        parentChildrenToRemove.set(parentId, list);
       }
     }
     const parentIds = [...parentChildrenToRemove.keys()];
 
-    // ========== 5. 批量读取父分类的 Redis children（用于 Redis 更新，MongoDB 用原子操作不需要先查）==========
-    const parentRedisData = new Map<number, number[]>();
-    if (parentIds.length > 0) {
-      const parentPipeline = redis.pipeline();
-      for (const parentId of parentIds) {
-        parentPipeline.hgetAll(`${CHAIN_PREFIX}${parentId}`);
-      }
-      const redisResults = await parentPipeline.execAsync();
+    // ========== 4. 获取父分类的 children（用于过滤后写回）==========
+    const parentPipeline = redis.pipeline();
+    parentIds.forEach((pid) =>
+      parentPipeline.hget(`${CHAIN_PREFIX}${pid}`, 'children'),
+    );
+    const parentResults = await parentPipeline.execAsync();
+    const parentChildrenMap = new Map<number, number[]>();
+    parentIds.forEach((pid, i) => {
+      const childrenStr = parentResults[i] as string | null;
+      parentChildrenMap.set(
+        pid,
+        childrenStr ? (JSON.parse(childrenStr) as number[]) : [],
+      );
+    });
 
-      for (let i = 0; i < parentIds.length; i++) {
-        const parentId = parentIds[i];
-        const parentChain = redisResults[i] as Record<string, string> | null;
-        parentRedisData.set(
-          parentId,
-          parentChain?.children ? JSON.parse(parentChain.children) : [],
-        );
-      }
-    }
-
-    // ========== 6. 构建 Redis Pipeline ==========
+    // ========== 5. 构建 Redis 删除/更新 Pipeline ==========
     const pipeline = redis.pipeline();
 
-    // 6.1 从排序索引中删除所有分类的 ID
-    for (const id of ids) {
-      pipeline.lrem(`${ORDER_PREFIX}all`, 0, id);
-    }
+    // 5.1 从排序索引中删除
+    ids.forEach((id) => pipeline.lrem(`${ORDER_PREFIX}all`, 0, id));
 
-    // 6.2 删除所有分类的详情/计数器/祖先链路/文集列表
-    for (const id of ids) {
+    // 5.2 删除详情/计数器/祖先链路/文集列表
+    ids.forEach((id) => {
       pipeline.del(`${INFO_PREFIX}${id}`);
-      pipeline.del(`${COUNT_PREFIX}${id}`);
       pipeline.del(`${CHAIN_PREFIX}${id}`);
+      pipeline.del(`${COUNT_PREFIX}${id}`);
       pipeline.del(`${PROJECTS_PREFIX}${id}`);
-    }
+    });
 
-    // 6.3 更新父分类的 children（使用已读取的 Redis 数据）
+    // 5.3 更新父分类的 children
     for (const [parentId, childIdsToRemove] of parentChildrenToRemove) {
-      const parentChildren = parentRedisData.get(parentId) || [];
-      const updatedChildren = parentChildren.filter(
+      const currentChildren = parentChildrenMap.get(parentId) || [];
+      const updatedChildren = currentChildren.filter(
         (cid) => !childIdsToRemove.includes(cid),
       );
       pipeline.hset(
@@ -1263,34 +921,22 @@ class CategoryService {
       );
     }
 
-    // ========== 7. 并行执行 Redis 和 MongoDB 更新 ==========
+    // ========== 6. 并行执行所有删除操作（MockTable + MongoDB + Redis）==========
     try {
-      const mongoOperations: Promise<any>[] = [
-        pipeline.execAsync(), // Redis 批量更新
-        categoryMongoCollection.deleteMany({ id: { $in: ids } }), // MongoDB：批量删除
-      ];
-
-      // MongoDB：原子更新父分类的 children（$pull + updateMany，不需要先查询）
-      if (parentIds.length > 0) {
-        mongoOperations.push(
-          categoryMongoCollection.updateMany(
-            { id: { $in: parentIds } },
-            { $pull: { children: { $in: ids } } },
-          ),
-        );
-      }
-
-      await Promise.all(mongoOperations);
+      const bulkDeleteOperations = ids.map((id) => ({ where: { id } }));
+      await Promise.all([
+        pipeline.execAsync(),
+        categoryTable.bulkDelete(bulkDeleteOperations),
+        categoryMongoCollection.deleteMany({ id: { $in: ids } }),
+      ]);
     } catch (error) {
-      // 缓存写入失败，记录日志，等待定时重建修复
-      // 不抛出错误，因为数据库已经删除成功
       console.error(
         '[CategoryCache] 批量删除缓存更新失败，将在下次定时重建时修复:',
         error,
       );
     }
 
-    return null;
+    return { deletedIds: ids };
   }
 
   /**
@@ -1317,51 +963,90 @@ class CategoryService {
   async batchMoveCategories(
     data: BatchMoveCategoriesRequest,
   ): Promise<BatchMoveCategoriesResponse> {
-    const ORDER_PREFIX = 'project:category:order:';
-
     const startTime = Date.now();
     const idSet = new Set(data.ids.map(Number));
     const ids = Array.from(idSet);
     const targetId = Number(data.target_parent_id);
 
-    // ========== 1. 获取分类列表（使用通用函数，优先 Redis（L3），降级 MongoDB（L2），最后数据库）==========
-    const allCategories = await getAllCategoriesWithFallback({
-      useColdStart: false,
-    });
+    // ========== 1. 循环检测 + 获取旧 parent_id（合并缓存 pipeline，放在全量查询之前）==========
+    // 循环检测：targetId 的祖先中不能有被移动的分类（否则会形成循环）
+    // 旧 parent_id：从 ancestors 最后一个元素获取
+    const oldParentIds = new Map<number, number>();
+    if (targetId !== 0 || ids.length > 0) {
+      const checkPipeline = redis.pipeline();
+      // targetId 的 ancestors（用于循环检测），targetId=0 时不需要
+      if (targetId !== 0) {
+        checkPipeline.hget(`${CHAIN_PREFIX}${targetId}`, 'ancestors');
+      }
+      // 被移动分类的 ancestors（用于获取旧 parent_id）
+      ids.forEach((id) =>
+        checkPipeline.hget(`${CHAIN_PREFIX}${id}`, 'ancestors'),
+      );
+      const checkResults = await checkPipeline.execAsync();
+
+      let resultIndex = 0;
+      // 循环检测
+      if (targetId !== 0) {
+        const targetAncestorsStr = checkResults[resultIndex++] as string | null;
+        const targetAncestors = targetAncestorsStr
+          ? (JSON.parse(targetAncestorsStr) as number[])
+          : [];
+        if (targetAncestors.some((aid) => idSet.has(aid))) {
+          throw new BusinessError('不能将分类移动到其自身的子分类下');
+        }
+      }
+      // 获取旧 parent_id
+      ids.forEach((id) => {
+        const ancestorsStr = checkResults[resultIndex++] as string | null;
+        const ancestors = ancestorsStr
+          ? (JSON.parse(ancestorsStr) as number[])
+          : [];
+        const oldParentId =
+          ancestors.length > 0 ? ancestors[ancestors.length - 1] : 0;
+        oldParentIds.set(id, oldParentId);
+      });
+    }
+
+    // ========== 2. 获取分类列表（优先 Redis，降级 MongoDB/数据库）==========
+    // 统一返回带 project_count 和 project_ids 字段的分类数据，用于前端乐观更新后正确显示文集数
+    const allCategories = await getAllCategoriesWithFallback();
 
     // 文集数据从数据库获取
     const allProjects = await projectTable.findAll();
 
-    // ========== 2. 记录移动前每个分类的父分类 ID ==========
-    const oldParentIds = new Map<number, number>();
-    idSet.forEach((id) => {
-      const category = allCategories.find((c) => c.id === id);
-      if (category) {
-        oldParentIds.set(id, category.parent_id);
-      }
+    // ========== 3. 计算移动后的新 sort（保持被移动分类的相对顺序，追加到目标父分类末尾）==========
+    // 3.1 目标父分类下现有的子分类（排除被移动的分类）
+    const targetSiblings = allCategories.filter(
+      (c) => c.parent_id === targetId && !idSet.has(c.id),
+    );
+    const maxSort = targetSiblings.reduce(
+      (max, c) => Math.max(max, c.sort || 0),
+      0,
+    );
+    // 3.2 按原始 sort 排序被移动分类，保持相对顺序
+    const sortedMovingIds = [...ids].sort((a, b) => {
+      const ca = allCategories.find((c) => c.id === a);
+      const cb = allCategories.find((c) => c.id === b);
+      return (ca?.sort || 0) - (cb?.sort || 0);
+    });
+    // 3.3 为每个被移动分类分配新的 sort
+    const newSortMap = new Map<number, number>();
+    sortedMovingIds.forEach((id, index) => {
+      newSortMap.set(id, maxSort + index + 1);
     });
 
-    // ========== 3. 防止移动到自己的子分类下（循环检测）==========
-    const checkCycle = (parentId: number): boolean => {
-      if (idSet.has(parentId)) return true;
-      const parent = allCategories.find((c) => c.id === parentId);
-      if (!parent || !parent.parent_id) return false;
-      return checkCycle(parent.parent_id);
-    };
-    if (targetId !== 0 && checkCycle(targetId)) {
-      throw new BusinessError('不能将分类移动到其自身的子分类下');
-    }
-
-    // ========== 4. 批量更新数据库中的 parent_id（使用 bulkUpdate，避免循环）==========
+    // ========== 4. 批量更新数据库中的 parent_id 和 sort（使用 bulkUpdate，避免循环）==========
     const bulkUpdateOperations = ids.map((id) => ({
       where: { id },
-      data: { parent_id: targetId },
+      data: { parent_id: targetId, sort: newSortMap.get(id) },
     }));
     categoryTable.bulkUpdate(bulkUpdateOperations);
 
     // ========== 5. 直接在内存中更新分类数据（避免重复全量读取数据库）==========
     const updatedCategories = allCategories.map((c) =>
-      idSet.has(c.id) ? { ...c, parent_id: targetId } : c,
+      idSet.has(c.id)
+        ? { ...c, parent_id: targetId, sort: newSortMap.get(c.id) ?? c.sort }
+        : c,
     );
 
     // ========== 6. 递归更新移动分类及其后代的祖先链路 ==========
@@ -1379,19 +1064,67 @@ class CategoryService {
       allProjects,
     );
 
-    // ========== 8. 更新排序索引（List，使用 Pipeline 批量操作）==========
-    const sorted = [...updatedCategories].sort((a, b) => {
-      if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
-      return a.sort - b.sort;
+    // ========== 8. 更新排序索引（精确操作：删除被移动分类 + 插入到目标位置）+ 更新 Redis Hash ==========
+    // 8.1 从排序索引中删除被移动分类，同时更新 Hash 中的 parent_id 和 sort
+    const updatePipeline = redis.pipeline();
+    ids.forEach((id) => updatePipeline.lrem(`${ORDER_PREFIX}all`, 0, id));
+    ids.forEach((id) => {
+      updatePipeline.hset(`${INFO_PREFIX}${id}`, 'parent_id', String(targetId));
+      updatePipeline.hset(
+        `${INFO_PREFIX}${id}`,
+        'sort',
+        String(newSortMap.get(id)),
+      );
     });
+    await updatePipeline.execAsync();
 
-    const orderPipeline = redis.pipeline();
-    orderPipeline.del(`${ORDER_PREFIX}all`);
-    orderPipeline.rpush(
+    // 8.2 获取当前排序索引，找到插入位置（第一个 parent_id > targetId 的分类之前）
+    const orderedIds = (await redis.lrange(
       `${ORDER_PREFIX}all`,
-      ...sorted.map((c) => String(c.id)),
-    );
-    await orderPipeline.execAsync();
+      0,
+      -1,
+    )) as number[];
+
+    if (orderedIds.length === 0) {
+      // List 为空，直接按 sort 顺序追加
+      const pushPipeline = redis.pipeline();
+      sortedMovingIds.forEach((id) =>
+        pushPipeline.rpush(`${ORDER_PREFIX}all`, id),
+      );
+      await pushPipeline.execAsync();
+    } else {
+      // 批量获取 parent_id，定位插入位置
+      const parentIdPipeline = redis.pipeline();
+      orderedIds.forEach((oid) =>
+        parentIdPipeline.hget(`${INFO_PREFIX}${oid}`, 'parent_id'),
+      );
+      const parentIdResults = await parentIdPipeline.execAsync();
+
+      let insertIndex = orderedIds.length; // 默认插入到末尾
+      for (let i = 0; i < orderedIds.length; i++) {
+        if (Number(parentIdResults[i]) > targetId) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      // 8.3 按 sort 顺序精确插入
+      const insertPipeline = redis.pipeline();
+      if (insertIndex === 0) {
+        // 插入到最前面（reverse 保证顺序正确）
+        [...sortedMovingIds]
+          .reverse()
+          .forEach((id) => insertPipeline.lpush(`${ORDER_PREFIX}all`, id));
+      } else {
+        // 插入到 insertIndex-1 之后，逐个链式插入保持顺序
+        let pivotId = orderedIds[insertIndex - 1];
+        sortedMovingIds.forEach((id) => {
+          insertPipeline.linsert(`${ORDER_PREFIX}all`, 'AFTER', pivotId, id);
+          pivotId = id;
+        });
+      }
+      await insertPipeline.execAsync();
+    }
 
     // ========== 9. 收集受影响的分类 ID ==========
     const affectedIds = new Set<number>();
@@ -1426,53 +1159,21 @@ class CategoryService {
         `耗时=${duration}ms`,
     );
 
-    // ========== 10. 并行执行 MongoDB 更新（使用原子操作，不需要先查询）==========
+    // ========== 10. 并行执行 MongoDB 更新 ==========
     try {
-      // 10.1 收集旧父分类 ID（排除被移动的分类本身和目标分类）
-      const oldParentIdSet = new Set<number>();
-      for (const id of idSet) {
-        const oldParentId = oldParentIds.get(id);
-        if (
-          oldParentId !== undefined &&
-          oldParentId !== 0 &&
-          !idSet.has(oldParentId) &&
-          oldParentId !== targetId
-        ) {
-          oldParentIdSet.add(oldParentId);
-        }
-      }
-      const oldParentIdsArray = Array.from(oldParentIdSet);
-
-      // 10.2 并行执行 MongoDB 更新（使用原子操作 $pull/$push，不需要先查询）
-      const mongoOperations: Promise<any>[] = [
-        // 批量更新被移动分类的 parent_id（updateMany，1 次查询）
-        categoryMongoCollection.updateMany(
-          { id: { $in: ids } },
-          { $set: { parent_id: targetId } },
-        ),
-      ];
-
-      // 旧父分类：原子移除被移动的分类 ID（$pull + updateMany）
-      if (oldParentIdsArray.length > 0) {
-        mongoOperations.push(
-          categoryMongoCollection.updateMany(
-            { id: { $in: oldParentIdsArray } },
-            { $pull: { children: { $in: ids } } },
-          ),
-        );
-      }
-
-      // 新父分类：原子添加被移动的分类 ID（$push + $each）
-      if (targetId !== 0 && !idSet.has(targetId)) {
-        mongoOperations.push(
-          categoryMongoCollection.updateOne(
-            { id: targetId },
-            { $push: { children: { $each: ids } } },
-          ),
-        );
-      }
-
-      await Promise.all(mongoOperations);
+      // 批量更新被移动分类的 parent_id 和 sort（MockMongoDB bulkWrite 格式）
+      await categoryMongoCollection.bulkWrite(
+        ids.map((id) => ({
+          type: 'update' as const,
+          filter: { id },
+          update: {
+            $set: {
+              parent_id: targetId,
+              sort: newSortMap.get(id),
+            },
+          },
+        })),
+      );
     } catch (error) {
       // MongoDB 更新失败，记录日志，等待定时重建修复
       // 不抛出错误，因为数据库和 Redis 已经更新成功
@@ -1482,6 +1183,19 @@ class CategoryService {
       );
     }
 
+    // 返回前同步最新的 project_count（calculateAndApplyCounterDiff 已更新缓存，但 updatedCategories 中还是旧值）
+    // 注意：categoryCountCache.get 返回值可能为 null（缓存未命中），需做安全转换避免 NaN
+    const categoriesWithLatestCount = updatedCategories.map((cat) => {
+      const latestCount = categoryCountCache.get<number>(String(cat.id));
+      const rawCount =
+        latestCount !== null ? latestCount : (cat as any).project_count;
+      const numCount = Number(rawCount);
+      return {
+        ...cat,
+        project_count: isNaN(numCount) ? 0 : numCount,
+      };
+    });
+
     return {
       movedIds: ids,
       targetParentId: targetId,
@@ -1489,225 +1203,195 @@ class CategoryService {
       updatedCounters,
       affectedIds: Array.from(affectedIds),
       duration,
+      // 返回更新后的全部分类列表（含最新 project_count，用于前端乐观更新）
+      categories: categoriesWithLatestCount,
     };
   }
 
   /**
-   * 保存分类排序（支持扁平化数据，每个 item 自带 id/sort/parent_id）
+   * 保存分类排序（同级拖动排序，parent_id 不变）
    *
    * 【功能】
-   * - 支持只修改 sort 字段：精确更新 Hash + Pipeline 重建排序索引
-   * - 支持修改 parent_id（移动分类）：递归更新祖先链路 + 计数器差异
-   * - 同步更新 MongoDB（sort/parent_id + 父分类 children）
+   * - 仅修改同级分类的 sort 字段
+   * - 校验所有被拖动分类属于同一父分类
+   * - 精确更新排序索引（删除同级分组 + 按新 sort 重新插入）
    *
    * 【性能优化】
-   * 1. 优先从 Redis（L3）获取分类数据，降级到 MongoDB（L2），最后数据库
-   * 2. 批量处理 parent_id 变化：只获取一次文集数据，避免循环重复获取
-   * 3. 并行执行 MongoDB 更新（Promise.all）：批量更新 sort/parent_id + 批量更新父分类 children
-   * 4. 批量查询父分类信息（一次 find，不需要循环查询）
-   * 5. 添加错误处理：数据库更新成功后，缓存失败不影响主流程，等待定时重建修复
+   * 1. 全部从 Redis 缓存读取，无全量查询
+   * 2. 数据库/Redis/MongoDB 均使用批量操作
+   * 3. 排序索引精确更新，不全量重建
    *
    * @param data 请求参数
    */
-  async saveCategorySort(data: SaveCategorySortRequest): Promise<null> {
-    const INFO_PREFIX = 'project:category:info:';
-    const ORDER_PREFIX = 'project:category:order:';
+  async saveCategorySort(
+    data: SaveCategorySortRequest,
+  ): Promise<SaveCategorySortResponse> {
+    const ids = data.sorts.map((s) => s.id);
 
-    let hasParentChange = false;
-    const sortUpdates: Array<{ id: number; sort: number }> = [];
-    const parentChanges: Array<{
-      id: number;
-      oldParentId: number;
-      newParentId: number;
-    }> = [];
+    // ========== 1. 从缓存批量获取分类信息（验证存在性 + 获取 parent_id）==========
+    const infoPipeline = redis.pipeline();
+    ids.forEach((id) => infoPipeline.hgetAll(`${INFO_PREFIX}${id}`));
+    const infoResults = await infoPipeline.execAsync();
 
-    // ========== 1. 获取分类列表（使用通用函数，优先 Redis（L3），降级 MongoDB（L2），最后冷启动）==========
-    const allCategories = await getAllCategoriesWithFallback({
-      useColdStart: true,
-    });
+    const categories = infoResults
+      .filter((hashData) => hashData && Object.keys(hashData).length > 0)
+      .map((hashData) => hashToCategory(hashData as Record<string, string>));
 
-    // 构建 ID → 分类的 Map，方便查找
-    const categoryMap = new Map(allCategories.map((c) => [c.id, c]));
-
-    // ========== 2. 遍历排序数据，收集更新操作 ==========
-    for (const item of data.sorts) {
-      const category = categoryMap.get(item.id);
-      if (!category) continue;
-
-      const newParentId = item.parent_id ?? category.parent_id;
-      const newSort = item.sort ?? category.sort;
-
-      // 检查是否修改了 parent_id
-      if (newParentId !== category.parent_id) {
-        hasParentChange = true;
-        parentChanges.push({
-          id: category.id,
-          oldParentId: category.parent_id,
-          newParentId,
-        });
-      }
-
-      // 收集 sort 更新（即使有 parent_id 变化，也需要更新 sort）
-      if (newSort !== category.sort) {
-        sortUpdates.push({ id: category.id, sort: newSort });
-      }
-
-      // 更新数据库
-      await categoryTable.updateById(item.id, {
-        sort: newSort,
-        parent_id: newParentId,
-      });
-
-      // 更新内存中的分类数据（避免重新查询数据库）
-      categoryMap.set(category.id, {
-        ...category,
-        sort: newSort,
-        parent_id: newParentId,
-      });
+    if (categories.length === 0) {
+      throw new BusinessError(
+        '分类不存在',
+        ErrorCodes.Project.CATEGORY_NOT_FOUND,
+      );
     }
 
-    // ========== 3. 缓存更新策略 ==========
-    if (hasParentChange) {
-      // 3.1 修改了 parent_id（移动分类）：批量处理，只获取一次文集数据
-      const updatedCategories = Array.from(categoryMap.values());
-      const allProjects = await projectTable.findAll(); // 只获取一次
+    // ========== 2. 同级校验：所有分类的 parent_id 必须相同 ==========
+    const parentId = categories[0].parent_id;
+    if (!categories.every((c) => c.parent_id === parentId)) {
+      throw new BusinessError(
+        '只支持同级分类排序',
+        ErrorCodes.Common.VALIDATION_FAILED,
+      );
+    }
 
-      for (const change of parentChanges) {
-        // 递归更新该分类及其后代的祖先链路
-        updateCategoryChainRecursive(change.id, updatedCategories);
-
-        // 计算计数器差异，精确更新受影响的祖先计数器
-        calculateAndApplyCounterDiff(
-          [change.id],
-          new Map([[change.id, change.oldParentId]]),
-          change.newParentId,
-          updatedCategories,
-          allProjects,
-        );
-      }
+    // ========== 3. 获取所有同级分类 ID（用于排序索引更新）==========
+    let siblingIds: number[] = [];
+    if (parentId !== 0) {
+      // 非顶级：从 chain.children 获取
+      const childrenStr = await redis.hget(
+        `${CHAIN_PREFIX}${parentId}`,
+        'children',
+      );
+      siblingIds = childrenStr ? (JSON.parse(childrenStr) as number[]) : [];
     } else {
-      // 3.2 只修改 sort：精确更新 Hash（Pipeline 批量操作）
-      if (sortUpdates.length > 0) {
-        const infoPipeline = redis.pipeline();
-        for (const update of sortUpdates) {
-          infoPipeline.hset(
-            `${INFO_PREFIX}${update.id}`,
-            'sort',
-            String(update.sort),
-          );
-        }
-        await infoPipeline.execAsync();
+      // 顶级：从 order:all List 筛选 parent_id = 0
+      const orderedIds = (await redis.lrange(
+        `${ORDER_PREFIX}all`,
+        0,
+        -1,
+      )) as number[];
+      if (orderedIds.length > 0) {
+        const pidPipeline = redis.pipeline();
+        orderedIds.forEach((oid) =>
+          pidPipeline.hget(`${INFO_PREFIX}${oid}`, 'parent_id'),
+        );
+        const pidResults = await pidPipeline.execAsync();
+        siblingIds = orderedIds.filter((oid, i) => Number(pidResults[i]) === 0);
       }
     }
 
-    // ========== 4. 重建排序索引（使用 Pipeline 批量操作）==========
-    const updatedCategories = Array.from(categoryMap.values());
-    const sorted = [...updatedCategories].sort((a, b) => {
-      if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
-      return a.sort - b.sort;
-    });
-
-    const orderPipeline = redis.pipeline();
-    orderPipeline.del(`${ORDER_PREFIX}all`);
-    orderPipeline.rpush(
-      `${ORDER_PREFIX}all`,
-      ...sorted.map((c) => String(c.id)),
+    // ========== 4. 获取所有同级分类的当前 sort，应用新值后重新排序 ==========
+    const sortPipeline = redis.pipeline();
+    siblingIds.forEach((sid) =>
+      sortPipeline.hget(`${INFO_PREFIX}${sid}`, 'sort'),
     );
-    await orderPipeline.execAsync();
+    const sortResults = await sortPipeline.execAsync();
 
-    // ========== 5. 并行执行 MongoDB 更新 ==========
-    try {
-      // 5.1 收集需要更新的父分类（旧父分类 + 新父分类）
-      const parentChildrenUpdates = new Map<
-        number,
-        { add: number[]; remove: number[] }
-      >();
+    const sortMap = new Map<number, number>();
+    siblingIds.forEach((sid, i) => {
+      sortMap.set(sid, Number(sortResults[i]) || 0);
+    });
+    // 应用新的 sort 值
+    for (const item of data.sorts) {
+      sortMap.set(item.id, item.sort);
+    }
+    // 按 sort 升序排列
+    const sortedSiblingIds = [...siblingIds].sort(
+      (a, b) => (sortMap.get(a) || 0) - (sortMap.get(b) || 0),
+    );
 
-      if (hasParentChange) {
-        for (const change of parentChanges) {
-          // 从旧父分类移除
-          if (change.oldParentId !== 0) {
-            if (!parentChildrenUpdates.has(change.oldParentId)) {
-              parentChildrenUpdates.set(change.oldParentId, {
-                add: [],
-                remove: [],
-              });
-            }
-            parentChildrenUpdates
-              .get(change.oldParentId)!
-              .remove.push(change.id);
-          }
-          // 添加到新父分类
-          if (change.newParentId !== 0) {
-            if (!parentChildrenUpdates.has(change.newParentId)) {
-              parentChildrenUpdates.set(change.newParentId, {
-                add: [],
-                remove: [],
-              });
-            }
-            parentChildrenUpdates.get(change.newParentId)!.add.push(change.id);
-          }
+    // ========== 5. 批量更新数据库 + Redis Hash ==========
+    const dbUpdates = data.sorts.map((item) => ({
+      where: { id: item.id },
+      data: { sort: item.sort },
+    }));
+    categoryTable.bulkUpdate(dbUpdates);
+
+    const hashPipeline = redis.pipeline();
+    data.sorts.forEach((item) => {
+      hashPipeline.hset(`${INFO_PREFIX}${item.id}`, 'sort', String(item.sort));
+    });
+    await hashPipeline.execAsync();
+
+    // ========== 6. 更新排序索引：删除同级分组 + 按新顺序重新插入 ==========
+    // 6.1 从 List 中删除所有同级分类
+    const removePipeline = redis.pipeline();
+    siblingIds.forEach((sid) =>
+      removePipeline.lrem(`${ORDER_PREFIX}all`, 0, sid),
+    );
+    await removePipeline.execAsync();
+
+    // 6.2 获取当前 List，定位插入位置（第一个 parent_id > parentId 的分类之前）
+    const orderedIds = (await redis.lrange(
+      `${ORDER_PREFIX}all`,
+      0,
+      -1,
+    )) as number[];
+    let insertIndex = orderedIds.length; // 默认末尾
+    if (orderedIds.length > 0) {
+      const pidPipeline = redis.pipeline();
+      orderedIds.forEach((oid) =>
+        pidPipeline.hget(`${INFO_PREFIX}${oid}`, 'parent_id'),
+      );
+      const pidResults = await pidPipeline.execAsync();
+      for (let i = 0; i < orderedIds.length; i++) {
+        if (Number(pidResults[i]) > parentId) {
+          insertIndex = i;
+          break;
         }
       }
+    }
 
-      // 5.2 批量查询所有父分类信息（一次 find，不需要循环查询）
-      const parentIds = [...parentChildrenUpdates.keys()];
-      let parentCategories: any[] = [];
-      if (parentIds.length > 0) {
-        parentCategories = await categoryMongoCollection
-          .find({ id: { $in: parentIds } })
-          .toArray();
-      }
+    // 6.3 按新顺序插入同级分类
+    const insertPipeline = redis.pipeline();
+    if (insertIndex === 0) {
+      // 插入到最前面（reverse 保证顺序正确）
+      [...sortedSiblingIds]
+        .reverse()
+        .forEach((id) => insertPipeline.lpush(`${ORDER_PREFIX}all`, id));
+    } else {
+      // 链式插入到 pivot 之后
+      let pivotId = orderedIds[insertIndex - 1];
+      sortedSiblingIds.forEach((id) => {
+        insertPipeline.linsert(`${ORDER_PREFIX}all`, 'AFTER', pivotId, id);
+        pivotId = id;
+      });
+    }
+    await insertPipeline.execAsync();
 
-      // 5.3 并行执行 MongoDB 更新
-      await Promise.all([
-        // 批量更新分类的 sort 和 parent_id
-        ...data.sorts.map((item) => {
-          const category = categoryMap.get(item.id);
-          if (!category) return Promise.resolve();
-
-          const updateData: any = {};
-          if (item.sort !== undefined) updateData.sort = item.sort;
-          if (item.parent_id !== undefined)
-            updateData.parent_id = item.parent_id;
-
-          if (Object.keys(updateData).length === 0) return Promise.resolve();
-
-          return categoryMongoCollection.updateOne(
-            { id: item.id },
-            { $set: updateData },
-          );
-        }),
-        // 批量更新父分类的 children 数组（使用已查询的数据，不需要再次查询）
-        ...parentCategories.map((parentCategory) => {
-          const update = parentChildrenUpdates.get(parentCategory.id);
-          if (!update) return Promise.resolve();
-
-          let children = parentCategory.children || [];
-          // 移除需要删除的
-          children = children.filter(
-            (cid: number) => !update.remove.includes(cid),
-          );
-          // 添加需要新增的（去重）
-          for (const cid of update.add) {
-            if (!children.includes(cid)) children.push(cid);
-          }
-          return categoryMongoCollection.updateOne(
-            { id: parentCategory.id },
-            { $set: { children } },
-          );
-        }),
-      ]);
+    // ========== 7. 批量更新 MongoDB ==========
+    try {
+      const mongoUpdates = data.sorts.map((item) => ({
+        type: 'update' as const,
+        filter: { id: item.id },
+        update: { $set: { sort: item.sort } },
+      }));
+      await categoryMongoCollection.bulkWrite(mongoUpdates);
     } catch (error) {
-      // MongoDB 更新失败，记录日志，等待定时重建修复
-      // 不抛出错误，因为数据库和 Redis 已经更新成功
       console.error(
         '[CategoryCache] 保存排序 MongoDB 更新失败，将在下次定时重建时修复:',
         error,
       );
     }
 
-    return null;
+    // ========== 8. 返回更新后的分类（从缓存获取最新数据）==========
+    const resultPipeline = redis.pipeline();
+    ids.forEach((id) => resultPipeline.hgetAll(`${INFO_PREFIX}${id}`));
+    ids.forEach((id) => resultPipeline.get(`${COUNT_PREFIX}${id}`));
+    const resultResults = await resultPipeline.execAsync();
+
+    const updatedCategories = ids
+      .map((id, i) => {
+        const hashData = resultResults[i] as Record<string, string> | null;
+        const countStr = resultResults[i + ids.length] as string | null;
+        if (!hashData || Object.keys(hashData).length === 0) return null;
+        return {
+          ...hashToCategory(hashData),
+          project_count: Number(countStr) || 0,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+
+    return { categories: updatedCategories };
   }
 }
 
@@ -1731,9 +1415,10 @@ export async function updateCategoryCount(
   const idsToUpdate = chainData ? chainData.chain : [categoryId];
 
   // 使用 Pipeline 批量精确更新计数器
+  // 注意：categoryCountCache.prefix 未被 createCache 暴露，需使用硬编码前缀
   const pipeline = redis.pipeline();
   for (const id of idsToUpdate) {
-    pipeline.incrBy(`${categoryCountCache.prefix}${id}`, delta);
+    pipeline.incrBy(`${COUNT_PREFIX}${id}`, delta);
   }
   await pipeline.execAsync();
 }

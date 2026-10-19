@@ -3,265 +3,34 @@ import {
   DeleteOutlined,
   EditOutlined,
   PlusCircleOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SaveOutlined,
 } from '@ant-design/icons';
 import { useSetState } from 'ahooks';
-import {
-  Button,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Table,
-  Tag,
-  message,
-} from 'antd';
-import type { FormProps } from 'antd/es/form';
-import type { ColumnType, ColumnsType, TableProps } from 'antd/es/table';
+import { Button, Form, Popconfirm, Space, Table, Tag, message } from 'antd';
+import type { ColumnsType, TableProps } from 'antd/es/table';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  BatchMoveModal,
+  CategoryFormModal,
+  CategoryToolbar,
+} from './components';
+import { useDragSort } from './hooks/useDragSort';
 import './index.less';
-
-//#region 类型定义
-/** 树形分类基础条目 */
-export interface CategoryItem {
-  id: number | string;
-  name: string;
-  parent_id?: number | string | null;
-  sort?: number;
-  children?: CategoryItem[];
-  [key: string]: any;
-}
-
-/** 联动扩展字段配置：一套配置同时生成表格列 + 表单输入项 */
-export interface ExtraFieldConfig {
-  name: string;
-  label: string;
-  formType?: 'input' | 'inputNumber' | 'textarea' | 'select';
-  /** 自定义表单组件（优先级高于 formType），组件需支持 value 和 onChange（Form.Item 自动注入） */
-  renderFormItem?: React.ReactNode;
-  required?: boolean;
-  placeholder?: string;
-  rules?: any[];
-  options?: { label: string; value: any }[];
-  showColumn?: boolean;
-  width?: number | string;
-  align?: 'left' | 'center' | 'right';
-  render?: ColumnType<CategoryItem>['render'];
-  ellipsis?: boolean;
-}
-
-/** 操作按钮权限配置 */
-export interface ActionConfig {
-  add?: boolean;
-  edit?: boolean;
-  delete?: boolean;
-  addChild?: boolean;
-}
-
-/** 内置表格列显隐控制 */
-export interface ColumnDisplayConfig {
-  sort?: boolean;
-  stat?: boolean;
-}
-
-export interface CategoryManagerProps {
-  dataSource: CategoryItem[];
-  loading?: boolean;
-  /** 最大分类层级数（2=仅二级，3=支持三级），默认3 */
-  maxLevel?: number;
-  extraFields?: ExtraFieldConfig[];
-  extraColumns?: ColumnsType<CategoryItem>;
-  columnDisplay?: ColumnDisplayConfig;
-  nameColumnTitle?: string;
-  sortColumnTitle?: string;
-  /** 统计数值字段名（如 doc_count / article_count），默认 'count' */
-  statField?: string;
-  statColumnTitle?: string;
-  actionColumnTitle?: string;
-  nameLabel?: string;
-  actions?: ActionConfig;
-  addButtonText?: string;
-  saveButtonText?: string;
-  resetButtonText?: string;
-  addChildButtonText?: string;
-  editButtonText?: string;
-  deleteButtonText?: string;
-  batchDeleteButtonText?: string;
-  batchMoveButtonText?: string;
-  modalTitle?: string;
-  batchMoveModalTitle?: string;
-  selectedCountPrefix?: string;
-  selectedCountSuffix?: string;
-  onAdd?: (
-    values: any,
-    parentId?: number | string | null,
-  ) => Promise<void> | void;
-  onEdit?: (values: any, record: CategoryItem) => Promise<void> | void;
-  onDelete?: (record: CategoryItem) => Promise<void> | void;
-  onBatchDelete?: (keys: (number | string)[]) => Promise<void> | void;
-  onBatchMove?: (
-    keys: (number | string)[],
-    targetParentId: number | string,
-  ) => Promise<void> | void;
-  onRefresh?: () => void;
-  onSaveSort?: (sortedItems: CategoryItem[]) => Promise<void> | void;
-  sortable?: boolean;
-  selectable?: boolean;
-  tableProps?: Partial<TableProps<CategoryItem>>;
-  formProps?: Partial<FormProps>;
-  defaultExpandAllRows?: boolean;
-}
-//#endregion
-
-//#region 工具函数
-/** 判断是否为扁平化数据（顶层存在 parent_id > 0 的节点） */
-const isFlatData = (list: CategoryItem[]): boolean => {
-  return list.some((item) => (item.parent_id ?? 0) !== 0);
-};
-
-/** 扁平化数组转树形结构（按 sort 排序） */
-const flatToTree = (list: CategoryItem[]): CategoryItem[] => {
-  const map = new Map<number | string, CategoryItem>();
-  const roots: CategoryItem[] = [];
-  list.forEach((item) => map.set(item.id, { ...item, children: [] }));
-  list.forEach((item) => {
-    const node = map.get(item.id)!;
-    const pid = item.parent_id ?? 0;
-    if (pid !== 0 && map.has(pid)) {
-      map.get(pid)!.children!.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-  const sortTree = (arr: CategoryItem[]) => {
-    arr.sort((a, b) => (a.sort || 0) - (b.sort || 0));
-    arr.forEach((item) => item.children?.length && sortTree(item.children));
-  };
-  sortTree(roots);
-  return roots;
-};
-
-/** 树形结构转扁平化数组（保留 sort 和 parent_id） */
-const treeToFlat = (
-  tree: CategoryItem[],
-  parentId: number | string = 0,
-): CategoryItem[] => {
-  const result: CategoryItem[] = [];
-  tree.forEach((item) => {
-    const { children, ...rest } = item;
-    result.push({ ...rest, parent_id: parentId });
-    if (children?.length) result.push(...treeToFlat(children, item.id));
-  });
-  return result;
-};
-
-const findRecordById = (
-  tree: CategoryItem[],
-  id: number | string,
-): CategoryItem | null => {
-  for (const item of tree) {
-    if (item.id === id) return item;
-    if (item.children?.length) {
-      const found = findRecordById(item.children, id);
-      if (found) return found;
-    }
-  }
-  return null;
-};
-
-const getSiblingsById = (
-  tree: CategoryItem[],
-  id: number | string,
-): CategoryItem[] => {
-  const record = findRecordById(tree, id);
-  if (!record) return [];
-  const parentId = record.parent_id ?? 0;
-  if (parentId === 0) return tree;
-  return findRecordById(tree, parentId)?.children || [];
-};
-
-const updateSiblingsInTree = (
-  tree: CategoryItem[],
-  parentId: number | string,
-  newSiblings: CategoryItem[],
-): CategoryItem[] => {
-  if (parentId === 0) return newSiblings;
-  return tree.map((item) => {
-    if (item.id === parentId) return { ...item, children: newSiblings };
-    if (item.children?.length) {
-      return {
-        ...item,
-        children: updateSiblingsInTree(item.children, parentId, newSiblings),
-      };
-    }
-    return item;
-  });
-};
-
-/** 计算节点的子树深度（叶子节点=0，有一层子节点=1，以此类推） */
-const getSubtreeDepth = (node: CategoryItem): number => {
-  if (!node.children?.length) return 0;
-  return 1 + Math.max(...node.children.map(getSubtreeDepth));
-};
-
-/** 计算节点在树中的层级（根节点=1，未找到返回0） */
-const getNodeLevel = (
-  tree: CategoryItem[],
-  id: number | string,
-  level: number = 1,
-): number => {
-  for (const item of tree) {
-    if (item.id === id) return level;
-    if (item.children?.length) {
-      const found = getNodeLevel(item.children, id, level + 1);
-      if (found) return found;
-    }
-  }
-  return 0;
-};
-
-/**
- * 判断选中的节点是否可以移动到目标父分类下（不超过 maxLevel）
- * 最终层级 = 目标层级 + 选中节点最大子树深度 + 1
- */
-const canMoveTo = (
-  tree: CategoryItem[],
-  selectedIds: (number | string)[],
-  targetParentId: number | string,
-  maxLevel: number,
-): boolean => {
-  let maxSubtreeDepth = 0;
-  selectedIds.forEach((id) => {
-    const node = findRecordById(tree, id);
-    if (node)
-      maxSubtreeDepth = Math.max(maxSubtreeDepth, getSubtreeDepth(node));
-  });
-  const targetLevel =
-    targetParentId === 0 ? 0 : getNodeLevel(tree, targetParentId);
-  return targetLevel + maxSubtreeDepth + 1 <= maxLevel;
-};
-//#endregion
+import type {
+  CategoryItem,
+  CategoryManagerProps,
+  ColumnDisplayConfig,
+  ExtraFieldConfig,
+} from './types';
+import { flatToTree, isFlatData } from './utils';
 
 const CategoryManager: React.FC<CategoryManagerProps> = ({
   dataSource,
-  loading = false,
-  maxLevel = 3,
-  extraFields = [],
-  extraColumns = [],
-  columnDisplay = { sort: true, stat: true },
   nameColumnTitle = '分类名称',
   sortColumnTitle = '排序',
-  statField = 'count',
   statColumnTitle = '数量',
   actionColumnTitle = '操作',
   nameLabel = '分类名称',
-  actions = { add: true, edit: true, delete: true, addChild: true },
+  statField = 'count',
   addButtonText = '新增分类',
   saveButtonText = '保存排序',
   resetButtonText = '重置',
@@ -274,6 +43,12 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   batchMoveModalTitle = '批量移动',
   selectedCountPrefix = '已选择',
   selectedCountSuffix = '项',
+  loading = false,
+  maxLevel = 3,
+  extraFields = [],
+  extraColumns = [],
+  columnDisplay = { sort: true, stat: true },
+  actions = { add: true, edit: true, delete: true, addChild: true },
   onAdd,
   onEdit,
   onDelete,
@@ -290,53 +65,50 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   const [form] = Form.useForm();
 
   // 内部统一使用树形数据：传入扁平化数据时自动转树，已是树形则直接使用
+  // 传入 statField 时递归汇总统计字段（父分类 = 自身 + 所有后代）
   const treeData = useMemo(
-    () => (isFlatData(dataSource) ? flatToTree(dataSource) : dataSource),
-    [dataSource],
+    () =>
+      isFlatData(dataSource)
+        ? flatToTree(dataSource, statField)
+        : dataSource,
+    [dataSource, statField],
   );
 
   //#region 状态
-
   const [state, setState] = useSetState({
     dialogVisible: false,
     editingRecord: null as CategoryItem | null,
     parentId: null as number | string | null,
-    submitting: false,
-    isMobile: false,
     expandedRowKeys: [] as (number | string)[],
-    dragRowId: null as number | string | null,
-    dropRowId: null as number | string | null,
-    dropPosition: null as 'before' | 'after' | null,
     localDataSource: treeData as CategoryItem[],
     hasSortChanges: false,
-    savingSort: false,
     selectedRowKeys: [] as (number | string)[],
     batchMoveVisible: false,
     moveTargetParent: 0 as number | string,
+    isMobile: false,
+    submitting: false,
+    savingSort: false,
     batchMoving: false,
   });
   const {
     dialogVisible,
     editingRecord,
     parentId,
-    submitting,
-    isMobile,
     expandedRowKeys,
-    dragRowId,
-    dropRowId,
-    dropPosition,
     localDataSource,
     hasSortChanges,
-    savingSort,
     selectedRowKeys,
     batchMoveVisible,
     moveTargetParent,
+    isMobile,
+    submitting,
+    savingSort,
     batchMoving,
   } = state;
-
   //#endregion
 
   //#region 层级控制
+  /** 预先计算整棵树中每个节点的层级，存入 Map 方便快速查询，避免每次递归遍历树 */
   const idToLevelMap = useMemo(() => {
     const map = new Map<number | string, number>();
     const traverse = (items: CategoryItem[], level: number) => {
@@ -349,6 +121,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     return map;
   }, [localDataSource]);
 
+  /** 判断某个节点是否还能添加子节点（当前层级 < maxLevel 时才可加） */
   const canAddChild = useCallback(
     (record: CategoryItem) => (idToLevelMap.get(record.id) || 1) < maxLevel,
     [idToLevelMap, maxLevel],
@@ -407,80 +180,40 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     [],
   );
 
-  //#region 拖拽排序
-  const handleDragStart = useCallback(
-    (e: React.DragEvent, record: CategoryItem) => {
-      if (!sortable) return;
-      setState({ dragRowId: record.id });
-      e.dataTransfer.effectAllowed = 'move';
-    },
-    [sortable],
-  );
+  //#region 拖拽排序（委托给 useDragSort hook，仅本地更新，保存/重置由外部控制）
+  const {
+    dragRowId,
+    dropRowId,
+    dropPosition,
+    handleDragStart,
+    handleDragOver,
+    handleDrop,
+    handleDragEnd,
+  } = useDragSort({
+    sortable,
+    localDataSource,
+    onLocalDataSourceChange: (newTree) =>
+      setState({ localDataSource: newTree }),
+    onSortChange: () => setState({ hasSortChanges: true }),
+  });
+  //#endregion
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, record: CategoryItem) => {
-      if (!sortable || !dragRowId) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      const dragRow = findRecordById(localDataSource, dragRowId);
-      if (!dragRow || dragRow.parent_id !== record.parent_id) return;
-      setState({ dropRowId: record.id });
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setState({
-        dropPosition:
-          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after',
-      });
-    },
-    [sortable, dragRowId, localDataSource],
-  );
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent, record: CategoryItem) => {
-      if (!sortable || !dragRowId || dragRowId === record.id) return;
-      e.preventDefault();
-      const dragRow = findRecordById(localDataSource, dragRowId);
-      if (!dragRow || dragRow.parent_id !== record.parent_id) {
-        setState({ dragRowId: null, dropRowId: null, dropPosition: null });
-        return;
-      }
-      const siblings = getSiblingsById(localDataSource, record.id);
-      const dragIndex = siblings.findIndex((i) => i.id === dragRowId);
-      const dropIndex = siblings.findIndex((i) => i.id === record.id);
-      if (dragIndex === -1 || dropIndex === -1) return;
-      const newSiblings = [...siblings];
-      const [removed] = newSiblings.splice(dragIndex, 1);
-      const insertIndex = dropPosition === 'before' ? dropIndex : dropIndex + 1;
-      newSiblings.splice(
-        dragIndex < dropIndex ? insertIndex - 1 : insertIndex,
-        0,
-        removed,
-      );
-      const updated = newSiblings.map((item, i) => ({ ...item, sort: i + 1 }));
-      setState({
-        localDataSource: updateSiblingsInTree(
-          localDataSource,
-          record.parent_id ?? 0,
-          updated,
-        ),
-        hasSortChanges: true,
-        dragRowId: null,
-        dropRowId: null,
-        dropPosition: null,
-      });
-    },
-    [sortable, dragRowId, dropPosition, localDataSource],
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setState({ dragRowId: null, dropRowId: null, dropPosition: null });
-  }, []);
-
+  //#region 排序保存/重置
   const handleSaveSort = async () => {
     if (!onSaveSort) return;
     setState({ savingSort: true });
     try {
-      // 内部树形数据转回扁平化，调用方始终处理扁平数据
-      await onSaveSort(treeToFlat(localDataSource));
+      // 树形数据转回扁平化，调用方始终处理扁平数据
+      const flatList: CategoryItem[] = [];
+      const flatten = (items: CategoryItem[], parentId: number | string) => {
+        items.forEach((item) => {
+          const { children, ...rest } = item;
+          flatList.push({ ...rest, parent_id: parentId });
+          if (children?.length) flatten(children, item.id);
+        });
+      };
+      flatten(localDataSource, 0);
+      await onSaveSort(flatList);
       setState({ hasSortChanges: false });
       message.success('排序已保存');
     } catch {
@@ -508,16 +241,26 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     setState({ editingRecord: null });
     setState({ parentId: null });
     form.resetFields();
-    form.setFieldsValue({ sort: 1 });
+    // 自动计算根分类最大 sort + 1（排序输入框 disabled，仅显示）
+    const maxSort = localDataSource.reduce(
+      (max, item) => Math.max(max, item.sort || 0),
+      0,
+    );
+    form.setFieldsValue({ sort: maxSort + 1 });
     openDialog();
-  }, [form, openDialog]);
+  }, [form, openDialog, localDataSource]);
 
   const handleAddChild = useCallback(
     (record: CategoryItem) => {
       setState({ editingRecord: null });
       setState({ parentId: record.id });
       form.resetFields();
-      form.setFieldsValue({ sort: 1 });
+      // 自动计算该父分类下子节点最大 sort + 1
+      const maxSort = (record.children || []).reduce(
+        (max, item) => Math.max(max, item.sort || 0),
+        0,
+      );
+      form.setFieldsValue({ sort: maxSort + 1 });
       openDialog();
     },
     [form, openDialog],
@@ -538,7 +281,18 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
       const values = await form.validateFields();
       setState({ submitting: true });
       if (editingRecord) {
-        await onEdit?.(values, editingRecord);
+        // 编辑：构造提交数据
+        // 1. 从 editingRecord 去掉 children（树形节点特有，扁平化数据不需要）
+        // 2. 过滤 values 中的 undefined，避免覆盖 editingRecord 中正确的 parent_id 等字段
+        //    （validateFields 对没有 Form.Item 的字段会返回 undefined）
+        const { children: _ignored, ...recordWithoutChildren } = editingRecord;
+        const cleanValues = Object.fromEntries(
+          Object.entries(values).filter(([_, v]) => v !== undefined),
+        );
+        await onEdit?.(
+          { ...recordWithoutChildren, ...cleanValues },
+          editingRecord,
+        );
         message.success('编辑成功');
       } else {
         await onAdd?.(values, parentId);
@@ -561,74 +315,21 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     setState({ selectedRowKeys: [] });
   };
 
-  const parentOptions = useMemo(() => {
-    const options: {
-      label: string;
-      value: number | string;
-      disabled?: boolean;
-    }[] = [];
-    const disabledIds = new Set<number | string>();
-    const collectDisabled = (
-      items: CategoryItem[],
-      parentId: number | string,
-    ) => {
-      if (selectedRowKeys.includes(parentId)) disabledIds.add(parentId);
-      items.forEach((item) => {
-        if (
-          selectedRowKeys.includes(item.id) ||
-          disabledIds.has(item.parent_id ?? 0)
-        ) {
-          disabledIds.add(item.id);
-        }
-        if (item.children?.length) collectDisabled(item.children, item.id);
-      });
-    };
-    collectDisabled(localDataSource, 0);
-
-    // 判断移动到目标父分类后是否会超过最大层级
-    const isOverLevel = (targetParentId: number | string) =>
-      !canMoveTo(localDataSource, selectedRowKeys, targetParentId, maxLevel);
-
-    // 根选项（作为一级分类）
-    options.push({
-      label: '无（作为一级分类）',
-      value: 0,
-      disabled: isOverLevel(0),
-    });
-
-    const build = (items: CategoryItem[], level = 0) => {
-      items.forEach((item) => {
-        const overLevel = isOverLevel(item.id);
-        const disabled = disabledIds.has(item.id) || overLevel;
-        options.push({
-          label: `${'　'.repeat(level)}${level > 0 ? '└ ' : ''}${item.name}${
-            overLevel ? '（超出最大层级）' : ''
-          }`,
-          value: item.id,
-          disabled,
-        });
-        if (item.children?.length) build(item.children, level + 1);
-      });
-    };
-    build(localDataSource);
-    return options;
-  }, [localDataSource, selectedRowKeys, maxLevel]);
+  const handleOpenBatchMove = () => {
+    setState({ moveTargetParent: 0 });
+    setState({ batchMoveVisible: true });
+  };
 
   const handleBatchMoveConfirm = async () => {
     if (selectedRowKeys.length === 0) return;
-    // 二次校验：防止绕过下拉限制，移动后超过最大层级
-    if (
-      !canMoveTo(localDataSource, selectedRowKeys, moveTargetParent, maxLevel)
-    ) {
-      message.error('移动后将超过最大分类层级');
-      return;
-    }
     setState({ batchMoving: true });
     try {
       await onBatchMove?.(selectedRowKeys, moveTargetParent);
       message.success(`已移动 ${selectedRowKeys.length} 项`);
       setState({ selectedRowKeys: [] });
       setState({ batchMoveVisible: false });
+      // 移动后刷新数据，确保树形结构正确显示
+      onRefresh?.();
     } catch {
       message.error('移动失败');
     } finally {
@@ -767,145 +468,28 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   ]);
   //#endregion
 
-  //#region 表单内容
-  const renderFormContent = useCallback(
-    () => (
-      <Form form={form} layout="vertical" {...formProps}>
-        <Form.Item
-          name="name"
-          label={nameLabel}
-          rules={[{ required: true, message: `请输入${nameLabel}` }]}
-        >
-          <Input placeholder={`请输入${nameLabel}`} />
-        </Form.Item>
-        {columnDisplay.sort && (
-          <Form.Item name="sort" label="排序" initialValue={1}>
-            <InputNumber
-              min={1}
-              style={{ width: '100%' }}
-              placeholder="数字越小越靠前"
-            />
-          </Form.Item>
-        )}
-        {extraFields.map((field) => {
-          if (!field.formType && !field.renderFormItem) return null;
-          return (
-            <Form.Item
-              key={field.name}
-              name={field.name}
-              label={field.label}
-              rules={
-                field.rules ||
-                (field.required
-                  ? [{ required: true, message: `请输入${field.label}` }]
-                  : undefined)
-              }
-            >
-              {/* 优先使用自定义表单组件（Form.Item 自动注入 value 和 onChange） */}
-              {field.renderFormItem ?? (
-                <>
-                  {field.formType === 'input' && (
-                    <Input placeholder={field.placeholder} />
-                  )}
-                  {field.formType === 'textarea' && (
-                    <Input.TextArea rows={3} placeholder={field.placeholder} />
-                  )}
-                  {field.formType === 'inputNumber' && (
-                    <InputNumber
-                      style={{ width: '100%' }}
-                      placeholder={field.placeholder}
-                    />
-                  )}
-                  {field.formType === 'select' && (
-                    <Select
-                      options={field.options}
-                      placeholder={field.placeholder}
-                    />
-                  )}
-                </>
-              )}
-            </Form.Item>
-          );
-        })}
-      </Form>
-    ),
-    [form, formProps, nameLabel, columnDisplay.sort, extraFields],
-  );
-  //#endregion
-
-  const dialogTitle = editingRecord ? `编辑${modalTitle}` : `新增${modalTitle}`;
-
   return (
     <div className="category-manager">
-      <div className="cm-toolbar">
-        <div className="cm-toolbar-left">
-          {selectable && selectedRowKeys.length > 0 && (
-            <Space size="middle">
-              <span className="cm-selected-count">
-                {selectedCountPrefix} <strong>{selectedRowKeys.length}</strong>{' '}
-                {selectedCountSuffix}
-              </span>
-              {actions.delete && onBatchDelete && (
-                <Popconfirm
-                  title={`确定删除选中的 ${selectedRowKeys.length} 项吗？`}
-                  description="删除后不可恢复，子分类也将被删除"
-                  onConfirm={handleBatchDelete}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <Button danger size="small" icon={<DeleteOutlined />}>
-                    {batchDeleteButtonText}
-                  </Button>
-                </Popconfirm>
-              )}
-              {onBatchMove && (
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setState({ moveTargetParent: 0 });
-                    setState({ batchMoveVisible: true });
-                  }}
-                >
-                  {batchMoveButtonText}
-                </Button>
-              )}
-            </Space>
-          )}
-        </div>
-        <div className="cm-toolbar-right">
-          <Space size="small" wrap>
-            {sortable && hasSortChanges && (
-              <Button
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={handleResetSort}
-              >
-                {resetButtonText}
-              </Button>
-            )}
-            {sortable && (
-              <Button
-                type={hasSortChanges ? 'primary' : 'default'}
-                icon={<SaveOutlined />}
-                onClick={handleSaveSort}
-                loading={savingSort}
-                disabled={!hasSortChanges}
-              >
-                {saveButtonText}
-              </Button>
-            )}
-            {actions.add && (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={handleAdd}
-              >
-                {addButtonText}
-              </Button>
-            )}
-          </Space>
-        </div>
-      </div>
+      <CategoryToolbar
+        selectable={selectable}
+        selectedRowKeys={selectedRowKeys}
+        selectedCountPrefix={selectedCountPrefix}
+        selectedCountSuffix={selectedCountSuffix}
+        actions={actions}
+        onBatchDelete={handleBatchDelete}
+        onBatchMove={handleOpenBatchMove}
+        batchDeleteButtonText={batchDeleteButtonText}
+        batchMoveButtonText={batchMoveButtonText}
+        addButtonText={addButtonText}
+        onAdd={handleAdd}
+        sortable={sortable}
+        hasSortChanges={hasSortChanges}
+        saveButtonText={saveButtonText}
+        resetButtonText={resetButtonText}
+        savingSort={savingSort}
+        onSaveSort={handleSaveSort}
+        onResetSort={handleResetSort}
+      />
 
       <Table<CategoryItem>
         rowKey="id"
@@ -966,77 +550,45 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             .filter(Boolean)
             .join(' '),
         })}
-        {...tableProps}
+        {...(tableProps as Partial<TableProps<CategoryItem>>)}
       />
 
-      {!isMobile && (
-        <Modal
-          title={dialogTitle}
-          open={dialogVisible}
-          onOk={handleSubmit}
-          onCancel={closeDialog}
-          confirmLoading={submitting}
-          destroyOnClose
-          okText="确定"
-          cancelText="取消"
-        >
-          {renderFormContent()}
-        </Modal>
-      )}
+      <CategoryFormModal
+        visible={dialogVisible}
+        editingRecord={editingRecord}
+        form={form}
+        onOk={handleSubmit}
+        onCancel={closeDialog}
+        submitting={submitting}
+        nameLabel={nameLabel}
+        columnDisplay={columnDisplay as ColumnDisplayConfig}
+        extraFields={extraFields as ExtraFieldConfig[]}
+        formProps={formProps}
+        modalTitle={modalTitle}
+        isMobile={isMobile}
+      />
 
-      <Modal
-        title={batchMoveModalTitle}
-        open={batchMoveVisible}
+      <BatchMoveModal
+        visible={batchMoveVisible}
+        selectedRowKeys={selectedRowKeys}
+        moveTargetParent={moveTargetParent}
+        onMoveTargetChange={(value) => setState({ moveTargetParent: value })}
         onOk={handleBatchMoveConfirm}
         onCancel={() => setState({ batchMoveVisible: false })}
-        confirmLoading={batchMoving}
-        okText="确定移动"
-        cancelText="取消"
-        width={420}
-      >
-        <div className="cm-batch-move-tip">
-          将选中的 <strong>{selectedRowKeys.length}</strong> 个分类移动到：
-        </div>
-        <Form layout="vertical">
-          <Form.Item label="目标父分类">
-            <Select
-              value={moveTargetParent}
-              onChange={(value) => setState({ moveTargetParent: value })}
-              options={parentOptions}
-              placeholder="选择目标分类"
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {isMobile && (
-        <Drawer
-          title={dialogTitle}
-          placement="bottom"
-          open={dialogVisible}
-          onClose={closeDialog}
-          height="auto"
-          destroyOnClose
-          footer={
-            <div style={{ textAlign: 'right' }}>
-              <Space>
-                <Button onClick={closeDialog}>取消</Button>
-                <Button
-                  type="primary"
-                  loading={submitting}
-                  onClick={handleSubmit}
-                >
-                  确定
-                </Button>
-              </Space>
-            </div>
-          }
-        >
-          {renderFormContent()}
-        </Drawer>
-      )}
+        batchMoving={batchMoving}
+        modalTitle={batchMoveModalTitle}
+        localDataSource={localDataSource}
+        maxLevel={maxLevel}
+      />
     </div>
   );
 };
 
 export default CategoryManager;
+export type {
+  ActionConfig,
+  CategoryItem,
+  CategoryManagerProps,
+  ColumnDisplayConfig,
+  ExtraFieldConfig,
+} from './types';

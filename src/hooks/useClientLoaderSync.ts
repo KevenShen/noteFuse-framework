@@ -14,6 +14,8 @@ export interface UseClientLoaderSyncOptions<T = any> {
   mapData?: (data: T) => any;
   /** 判断是否有数据的函数（默认判断数组长度或对象非空） */
   hasData?: (data: T) => boolean;
+  /** 重置键：当此值变化时，重置同步状态，允许重新同步（用于路由参数变化的场景） */
+  resetKey?: string | number;
 }
 
 /**
@@ -53,9 +55,19 @@ export const useClientLoaderSync = <T = any>({
   actionType,
   mapData,
   hasData = defaultHasData,
+  resetKey,
 }: UseClientLoaderSyncOptions<T>) => {
   const dispatch = useDispatch();
   const syncedRef = useRef(false);
+  const lastResetKey = useRef<string | number | undefined>(resetKey);
+
+  // 当 resetKey 变化时，重置同步状态
+  useEffect(() => {
+    if (resetKey !== lastResetKey.current) {
+      syncedRef.current = false;
+      lastResetKey.current = resetKey;
+    }
+  }, [resetKey]);
 
   useEffect(() => {
     // 已经同步过，跳过

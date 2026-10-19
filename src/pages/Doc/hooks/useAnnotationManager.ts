@@ -31,6 +31,7 @@ export function useAnnotationManager(docId: number, versionId?: string) {
     newAnnotationMarkerId,
     readMode,
     docVersions,
+    currentDoc,
   } = useShallowSelector((state: any) => ({
     docAnnotations: state.docAnnotations.docAnnotations,
     annotationEditMode: state.docAnnotations.annotationEditMode,
@@ -40,6 +41,7 @@ export function useAnnotationManager(docId: number, versionId?: string) {
     newAnnotationMarkerId: state.docAnnotations.newAnnotationMarkerId,
     readMode: state.docDetail.readMode,
     docVersions: state.docVersions.docVersions,
+    currentDoc: state.docDetail.currentDoc,
   }));
 
   // ==================== 当前版本（从 docVersions 扁平化列表中查找） ====================
@@ -49,9 +51,9 @@ export function useAnnotationManager(docId: number, versionId?: string) {
       return docVersions.find((v: any) => v.id === Number(versionId)) || null;
     }
     return (
-      docVersions.find((v: any) => v.doc_id === docId && v.is_current) || null
+      docVersions.find((v: any) => v.doc_id === docId && v.id === currentDoc?.current_version_id) || null
     );
-  }, [docVersions, docId, versionId]);
+  }, [docVersions, docId, versionId, currentDoc?.current_version_id]);
 
   // ==================== 批注数据自动获取（当前版本的批注列表） ====================
   useEffect(() => {

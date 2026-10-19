@@ -38,17 +38,17 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(login, payload.username, payload.password);
-        if (!res.success) {
-          message.error(res.message || '登录失败');
+        if (!res?.success) {
+          message.error(res?.message || '登录失败');
           return;
         }
         // 保存 token
-        if (res.data?.token) {
-          localStorage.setItem('note_fuse_token', res.data.token);
+        if (res?.data?.token) {
+          localStorage.setItem('note_fuse_token', res?.data?.token);
         }
         // 登录成功后保存用户信息到 user model
-        if (res.data?.user) {
-          yield put({ type: 'user/saveCurrentUser', payload: res.data.user });
+        if (res?.data?.user) {
+          yield put({ type: 'user/saveCurrentUser', payload: res?.data?.user });
         }
         message.success('登录成功');
         history.push('/user/center');
@@ -67,8 +67,8 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(logout);
-        if (!res.success) {
-          message.error(res.message || '退出失败');
+        if (!res?.success) {
+          message.error(res?.message || '退出失败');
           return;
         }
         // 清除本地 token
@@ -92,9 +92,10 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(getCurrentUser);
-        if (res.success) {
-          yield put({ type: 'user/saveCurrentUser', payload: res.data });
+        if (!res?.success) {
+          return;
         }
+        yield put({ type: 'user/saveCurrentUser', payload: res?.data });
       } catch (error) {
         // token 无效或请求失败，清除 token 跳转登录
         console.error('[UserLoginModel] fetchCurrentUser 失败:', error);

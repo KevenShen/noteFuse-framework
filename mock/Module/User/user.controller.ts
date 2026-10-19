@@ -3,11 +3,10 @@
 // 职责：接收普通用户相关的 HTTP 请求，调用 Service 处理业务逻辑，统一返回响应
 
 import type { Request, Response } from 'express';
-import { delay, handleService } from '../../Core';
+import { delay, handleService, success } from '../../Core';
 import type {
   ChangePasswordRequest,
   ChangePasswordResponse,
-  CurrentUserResponse,
   GetEditorSettingsResponse,
   LoginRequest,
   LoginResponse,
@@ -52,17 +51,12 @@ class UserController {
     );
   }
 
-  /** 获取当前用户信息 */
+  /** 获取当前用户信息（直接从 authMiddleware 挂载的 req.currentUser 返回，避免重复查询） */
   async getCurrentUser(req: Request, res: Response) {
     await delay(200);
-    // 从 req 获取当前用户（由 authMiddleware 挂载）
+    // 从 req 获取当前用户（由 authMiddleware 挂载，已包含完整用户信息）
     const currentUser = (req as any).currentUser;
-    await handleService<CurrentUserResponse>(
-      res,
-      () => userService.getCurrentUser(currentUser.id),
-      undefined,
-      401,
-    );
+    res.json(success(currentUser, '获取当前用户信息成功'));
   }
 
   // ==================== 注册相关 ====================
@@ -112,7 +106,7 @@ class UserController {
     const data = req.body as UpdateProfileRequest;
     await handleService<UpdateProfileResponse>(
       res,
-      () => userService.updateProfile(currentUser.id, data),
+      () => userService.updateProfile(currentUser.id, data, currentUser.email),
       '更新成功',
     );
   }
@@ -135,10 +129,12 @@ class UserController {
   /** 获取编辑器设置 */
   async getEditorSettings(req: Request, res: Response) {
     await delay(150);
-    // 从 req 获取当前用户（由 authMiddleware 挂载）
+    // 从 req 获取当前用户（由 authMiddleware 挂载，已包含编辑器设置）
     const currentUser = (req as any).currentUser;
-    await handleService<GetEditorSettingsResponse>(res, () =>
-      userService.getEditorSettings(currentUser.id),
+    await handleService<GetEditorSettingsResponse>(
+      res,
+      () => userService.getEditorSettings(currentUser),
+      '获取编辑器设置成功',
     );
   }
 

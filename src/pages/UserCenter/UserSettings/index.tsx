@@ -8,8 +8,6 @@ import PasswordForm from './components/PasswordForm';
 import ProfileForm from './components/ProfileForm';
 import './index.less';
 
-const { TabPane } = Tabs;
-
 /** Tab 配置常量（模块级，避免每次渲染重建） */
 const TAB_ITEMS = [
   { key: 'profile', label: '个人资料' },

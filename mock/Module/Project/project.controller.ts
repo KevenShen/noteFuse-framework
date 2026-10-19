@@ -9,7 +9,6 @@ import type {
   CreateProjectRequest,
   CreateProjectResponse,
   DeleteProjectResponse,
-  GetProjectDetailResponse,
   GetProjectListRequest,
   GetProjectListResponse,
   UpdateProjectRequest,
@@ -31,31 +30,19 @@ class ProjectController {
 
     // 参数默认值处理 + 类型转换（HTTP 层职责，service 层接收完整的、类型正确的参数）
     const params: GetProjectListRequest = {
-      page: Number(query.page ?? 1),
-      page_size: Number(query.page_size ?? 12),
+      project_category_id: Number(query.project_category_id ?? 0),
       keyword: query.keyword ?? '',
       filter: query.filter ?? 'all',
-      project_category_id: Number(query.project_category_id ?? 0),
       sort: query.sort ?? 'update',
+      page: Number(query.page ?? 1),
+      page_size: Number(query.page_size ?? 12),
       user_id: Number(query.user_id ?? 0),
     };
 
-    await handleService<GetProjectListResponse>(res, () =>
-      projectService.getProjectList(params),
-    );
-  }
-
-  // ==================== 文集详情 ====================
-
-  /** 获取文集详情 */
-  async getProjectDetail(req: Request, res: Response) {
-    await delay(100);
-    const id = Number(req.params.id);
-    await handleService<GetProjectDetailResponse>(
+    await handleService<GetProjectListResponse>(
       res,
-      () => projectService.getProjectDetail(id),
-      undefined,
-      404,
+      () => projectService.getProjectList(params),
+      '获取成功',
     );
   }
 
@@ -65,10 +52,11 @@ class ProjectController {
   async createProject(req: Request, res: Response) {
     await delay(300);
     const data = req.body as CreateProjectRequest;
-    // 传入 req，让 service 层从 token 获取当前用户
+    // 从 req 获取当前用户（由 authMiddleware 挂载）
+    const currentUser = (req as any).currentUser;
     await handleService<CreateProjectResponse>(
       res,
-      () => projectService.createProject(data, req),
+      () => projectService.createProject(data, currentUser.id),
       '创建成功',
     );
   }
@@ -84,7 +72,6 @@ class ProjectController {
       res,
       () => projectService.updateProject(id, data),
       '更新成功',
-      404,
     );
   }
 
@@ -98,7 +85,6 @@ class ProjectController {
       res,
       () => projectService.deleteProject(id),
       '删除成功',
-      404,
     );
   }
 }

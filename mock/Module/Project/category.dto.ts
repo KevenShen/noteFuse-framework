@@ -4,18 +4,33 @@
 
 import type { MockProjectCategory } from '../../Entities/project';
 
-// ==================== 分类相关 DTO ====================
+// ==================== 公共类型 ====================
 
-/** 分类项（带文集数量） */
-export interface CategoryWithProjectCount extends MockProjectCategory {
+/** 分类项（带统计字段：project_count + project_ids） */
+export interface CategoryWithStats extends MockProjectCategory {
   /** 文集数量（含所有后代分类下的文集总数） */
   project_count: number;
+  /** 该分类直接关联的文集 ID 数组 */
+  project_ids?: number[];
 }
+
+/** 分类排序项 */
+export interface CategorySortItem {
+  /** 分类 ID */
+  id: number;
+  /** 排序值 */
+  sort: number;
+}
+
+/** 获取分类详情响应数据（data 字段内容） */
+export type GetCategoryDetailResponse = MockProjectCategory;
+
+// ==================== 获取分类 ====================
 
 /** 获取分类列表请求参数（Query）
  *
  * 【当前实现状态】
- * - include_project_count：已实现（通过 getCategoryListWithProjectCount 固定返回带数量的列表）
+ * - include_project_count：已废弃，统一返回带统计字段的列表（project_count + project_ids）
  * - parent_id：预留，service 层暂未支持按父分类过滤（返回全量后前端过滤）
  * - keyword：预留，service 层暂未支持关键词搜索（返回全量后前端过滤）
  */
@@ -28,14 +43,10 @@ export interface GetCategoryListRequest {
   include_project_count?: boolean;
 }
 
-/** 获取分类列表响应数据（data 字段内容） */
-export type GetCategoryListResponse = MockProjectCategory[];
+/** 获取分类列表响应数据（data 字段内容，统一带统计字段） */
+export type GetCategoryListResponse = CategoryWithStats[];
 
-/** 获取带文集数量的分类列表响应数据（data 字段内容） */
-export type GetCategoryListWithProjectCountResponse = CategoryWithProjectCount[];
-
-/** 获取分类详情响应数据（data 字段内容） */
-export type GetCategoryDetailResponse = MockProjectCategory;
+// ==================== 创建分类 ====================
 
 /** 创建分类请求参数 */
 export interface CreateCategoryRequest {
@@ -52,7 +63,9 @@ export interface CreateCategoryRequest {
 }
 
 /** 创建分类响应数据（data 字段内容） */
-export type CreateCategoryResponse = MockProjectCategory;
+export type CreateCategoryResponse = CategoryWithStats;
+
+// ==================== 更新分类 ====================
 
 /** 更新分类请求参数 */
 export interface UpdateCategoryRequest {
@@ -68,11 +81,21 @@ export interface UpdateCategoryRequest {
   description?: string;
 }
 
-/** 更新分类响应数据（data 字段内容） */
-export type UpdateCategoryResponse = MockProjectCategory;
+/** 更新分类响应数据（data 字段内容，统一带统计字段） */
+export type UpdateCategoryResponse = CategoryWithStats;
 
-/** 删除分类响应数据（无数据） */
-export type DeleteCategoryResponse = null;
+// ==================== 删除分类 ====================
+
+/** 删除分类请求参数（ID 在 URL params 中） */
+export interface DeleteCategoryRequest {
+  /** 分类 ID */
+  id: number;
+}
+
+/** 删除分类响应数据（与批量删除一致） */
+export type DeleteCategoryResponse = BatchDeleteCategoriesResponse;
+
+// ==================== 批量删除分类 ====================
 
 /** 批量删除分类请求参数 */
 export interface BatchDeleteCategoriesRequest {
@@ -80,8 +103,13 @@ export interface BatchDeleteCategoriesRequest {
   ids: number[];
 }
 
-/** 批量删除分类响应数据（无数据） */
-export type BatchDeleteCategoriesResponse = null;
+/** 批量删除分类响应数据 */
+export interface BatchDeleteCategoriesResponse {
+  /** 成功删除的分类 ID 列表（含所有后代分类） */
+  deletedIds: number[];
+}
+
+// ==================== 批量移动分类 ====================
 
 /** 批量移动分类请求参数 */
 export interface BatchMoveCategoriesRequest {
@@ -105,17 +133,11 @@ export interface BatchMoveCategoriesResponse {
   affectedIds: number[];
   /** 耗时（毫秒） */
   duration: number;
+  /** 更新后的全部分类列表（扁平化，用于前端乐观更新，无需重新请求） */
+  categories: MockProjectCategory[];
 }
 
-/** 分类排序项 */
-export interface CategorySortItem {
-  /** 分类 ID */
-  id: number;
-  /** 排序值 */
-  sort: number;
-  /** 父分类 ID（可选，移动时使用） */
-  parent_id?: number;
-}
+// ==================== 保存分类排序 ====================
 
 /** 保存分类排序请求参数 */
 export interface SaveCategorySortRequest {
@@ -123,5 +145,8 @@ export interface SaveCategorySortRequest {
   sorts: CategorySortItem[];
 }
 
-/** 保存分类排序响应数据（无数据） */
-export type SaveCategorySortResponse = null;
+/** 保存分类排序响应数据 */
+export interface SaveCategorySortResponse {
+  /** 更新后的全部分类列表（扁平化，用于前端乐观更新，无需重新请求） */
+  categories: MockProjectCategory[];
+}

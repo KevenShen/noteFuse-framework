@@ -96,9 +96,9 @@ const DocContent: React.FC<DocContentProps> = ({
       return docVersions.find((v: any) => v.id === Number(versionId)) || null;
     }
     return (
-      docVersions.find((v: any) => v.doc_id === doc.id && v.is_current) || null
+      docVersions.find((v: any) => v.doc_id === doc.id && v.id === doc?.current_version_id) || null
     );
-  }, [docVersions, doc?.id, versionId]);
+  }, [docVersions, doc?.id, versionId, doc?.current_version_id]);
 
   // ==================== 上一篇/下一篇（组件内部计算） ====================
   const { prev: prevDoc, next: nextDoc } = useMemo(() => {
@@ -270,11 +270,16 @@ const DocContent: React.FC<DocContentProps> = ({
       ? mergeAnnotations(rawContent, annotations || [])  // 批注模式：合并原文和批注
       : filterMarkers(rawContent);                  // 原文模式：过滤标记
 
+  // 是否为当前版本（有 versionId 时对比，无 versionId 时 currentVersion 就是当前版本）
+  const isCurrentVersion = versionId
+    ? Number(versionId) === doc?.current_version_id
+    : true;
+
   return (
     <div className="doc-content-wrapper" ref={contentContainerRef}>
       <div className="doc-detail">
         {/* 标题 + 版本信息（同一行，标题居中，版本信息贴着右边） */}
-        <DocTitle title={doc.name} currentVersion={currentVersion} />
+        <DocTitle title={doc.name} currentVersion={currentVersion} isCurrent={isCurrentVersion} />
 
         <Divider style={{ margin: '6px 0 2px' }} />
 

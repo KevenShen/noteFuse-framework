@@ -3,66 +3,45 @@
 // 功能：延迟、统一响应格式、通用响应类型、Service 调用统一处理
 
 import type { Response } from 'express';
+import { CommonErrorCodes } from './errorCodes';
 
-/**
- * 统一响应格式（与 success()/fail() 返回值严格对应）
- * 所有模块的 API 响应均使用此类型，避免重复定义
- */
-export interface ApiResponse<T = any> {
-  /** 是否成功 */
-  success: boolean;
-  /** 错误码（成功时为 0） */
-  errorCode: number;
-  /** 提示信息 */
-  message: string;
-  /** 响应数据 */
-  data: T;
-}
-
-/**
- * 分页响应格式
- * 所有模块的分页列表响应均使用此类型
- */
+/** 分页响应格式 */
 export interface PaginatedResponse<T> {
-  /** 数据列表 */
   list: T[];
-  /** 总数 */
   total: number;
-  /** 当前页码 */
   page: number;
-  /** 每页条数 */
   page_size: number;
 }
 
 /**
- * Service 层内部返回格式
- * controller 层调用 service 方法后，根据此格式决定返回成功还是失败响应
- * 与 ApiResponse 的区别：errorCode 可选、data 可选，适合 service 层内部使用
+ * 统一响应格式（判别联合类型）
+ * if (res.success) → data: T；if (!res.success) → data: null
+ * errorCode 为业务错误码（0=成功，10000+=失败），非 HTTP 状态码
  */
-export interface ServiceResult<T = any> {
-  /** 是否成功 */
-  success: boolean;
-  /** 提示信息 */
-  message: string;
-  /** 错误码（可选） */
-  errorCode?: number;
-  /** 响应数据（可选） */
-  data?: T;
-}
+export type ApiResponse<T = unknown> =
+  | { success: true; errorCode: 0; message: string; data: T }
+  | { success: false; errorCode: number; message: string; data: null };
 
 /**
  * 业务异常类
  * Service 层失败时抛出此异常，Controller 层捕获并包装成统一失败响应
- * 用法：throw new BusinessError('用户名或密码错误', 401)
+ *
+ * 【errorCode 说明】
+ * - 业务错误码，非 HTTP 状态码
+ * - 默认 10000（通用业务错误），具体错误码按模块分配
+ * - 用法：throw new BusinessError('用户名或密码错误', 10001)
  */
 export class BusinessError extends Error {
-  /** 错误码 */
+  /** 业务错误码（非 HTTP 状态码，0=成功，10000+=业务错误） */
   errorCode: number;
+  /** 附加数据（可选，用于返回结构化错误信息，如批量操作中失败的 ID） */
+  data?: unknown;
 
-  constructor(message: string, errorCode: number = 400) {
+  constructor(message: string, errorCode: number = 10000, data?: unknown) {
     super(message);
     this.name = 'BusinessError';
     this.errorCode = errorCode;
+    this.data = data;
   }
 }
 
@@ -79,7 +58,10 @@ export const delay = (ms: number): Promise<void> => {
  * @param data 响应数据
  * @param message 响应消息
  */
-export const success = <T = any>(data: T, message = '操作成功') => {
+export const success = <T = any>(
+  data: T,
+  message = '操作成功',
+): ApiResponse<T> => {
   return {
     success: true,
     errorCode: 0,
@@ -91,14 +73,18 @@ export const success = <T = any>(data: T, message = '操作成功') => {
 /**
  * 失败响应
  * @param message 错误消息
- * @param errorCode 错误码
+ * @param errorCode 业务错误码（默认通用错误，非 HTTP 状态码）
  */
-export const fail = (message: string, errorCode = 400) => {
+export const fail = <T = null>(
+  message: string,
+  errorCode: number = CommonErrorCodes.UNKNOWN,
+  data?: T,
+): ApiResponse<T> => {
   return {
     success: false,
     errorCode,
     message,
-    data: null,
+    data: data ?? null,
   };
 };
 
@@ -110,7 +96,6 @@ export const fail = (message: string, errorCode = 400) => {
  * @param res Express Response
  * @param serviceCall Service 方法调用（返回纯数据或 Promise<纯数据>）
  * @param successMessage 成功消息（可选，默认"操作成功"）
- * @param errorStatus 失败时的 HTTP 状态码（可选，默认 200）
  *
  * @example
  * await handleService<LoginResponse>(
@@ -123,25 +108,20 @@ export const handleService = async <T>(
   res: Response,
   serviceCall: () => Promise<T> | T,
   successMessage?: string,
-  errorStatus?: number,
 ): Promise<void> => {
   try {
     const data = await serviceCall();
-    console.log(data);
     res.json(success(data, successMessage));
   } catch (error) {
     if (error instanceof BusinessError) {
-      if (errorStatus) {
-        res.status(errorStatus).json(fail(error.message, error.errorCode));
-      } else {
-        res.json(fail(error.message, error.errorCode));
-      }
+      // 统一返回 HTTP 200，通过响应体中的 success/errorCode 判断业务成功/失败
+      // 支持通过 error.data 返回结构化错误信息（如批量操作中失败的 ID）
+      res.json(fail(error.message, error.errorCode, error.data));
       return;
     }
     throw error;
   }
 };
-
 
 // ============================================================================
 // RabbitMQ 生产者-消费者通用框架
@@ -199,7 +179,9 @@ export interface QueueConfig {
  *
  * @typeParam T 数据项类型
  */
-export type BatchMessageHandler<T> = (message: BatchMessage<T>) => Promise<void>;
+export type BatchMessageHandler<T> = (
+  message: BatchMessage<T>,
+) => Promise<void>;
 
 /**
  * 通用生产者：分批获取数据并发布到 RabbitMQ 队列
@@ -246,9 +228,7 @@ export async function fetchAllWithCursorAndPublish<T>(
   } catch (e) {
     // 绑定可能已存在，忽略错误
   }
-  console.log(
-    `[Producer] 队列已声明并绑定: ${queueName} (durable=${durable})`,
-  );
+  console.log(`[Producer] 队列已声明并绑定: ${queueName} (durable=${durable})`);
 
   // ========== 2. 获取总数，计算总批次数 ==========
   const total = await table.count();
@@ -343,9 +323,7 @@ export async function consumeBatch<T>(
   const startTime = Date.now();
   const { queueName, prefetch } = queueConfig;
 
-  console.log(
-    `[Consumer] 开始消费队列: ${queueName} (prefetch=${prefetch})`,
-  );
+  console.log(`[Consumer] 开始消费队列: ${queueName} (prefetch=${prefetch})`);
 
   // ========== 1. 设置预取数量（背压控制，全局生效）==========
   await rabbitmq.prefetch(prefetch, true); // global=true，连接级预取

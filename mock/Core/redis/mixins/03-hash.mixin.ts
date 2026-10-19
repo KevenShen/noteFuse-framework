@@ -6,13 +6,29 @@ import type { MixinConstructor } from './mixin.types';
 
 export function WithHash<T extends MixinConstructor>(Base: T) {
   return class HashMixin extends Base {
-    /** 设置哈希字段 */
-    hset(key: string, field: string, value: any): number {
+    /**
+     * 设置哈希字段（支持两种调用方式）
+     * - hset(key, field, value)：单字段
+     * - hset(key, { field1: value1, field2: value2 })：多字段
+     */
+    hset(key: string, field: string | Record<string, any>, value?: any): number {
       const hash = this.get<Record<string, any>>(key) ?? {};
-      const isNew = !(field in hash);
-      hash[field] = value;
+      let newFieldCount = 0;
+
+      if (typeof field === 'object' && field !== null) {
+        // 多字段模式
+        for (const [f, v] of Object.entries(field)) {
+          if (!(f in hash)) newFieldCount++;
+          hash[f] = v;
+        }
+      } else {
+        // 单字段模式
+        if (!(field in hash)) newFieldCount++;
+        hash[field] = value;
+      }
+
       this.set(key, hash);
-      return isNew ? 1 : 0;
+      return newFieldCount;
     }
 
     /** 获取哈希字段 */

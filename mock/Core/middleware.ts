@@ -3,15 +3,20 @@
 // 职责：提供可复用的中间件组合器和通用中间件（含认证、权限、校验、日志）
 // 【核心层】模拟后端架构的通用中间件基础设施
 
-import type { Request, Response, NextFunction } from 'express';
-import { fail } from './common';
+import type { NextFunction, Request, Response } from 'express';
+import { fail, BusinessError } from './common';
+import { CommonErrorCodes } from './errorCodes';
 // 从 Core/auth 导入认证函数，避免循环依赖
 import { getCurrentUserFromToken } from './auth';
 
 // ==================== 类型定义 ====================
 
 /** 中间件函数类型（允许返回 any，mock 环境中返回值不会被使用） */
-export type Middleware = (req: Request, res: Response, next: NextFunction) => any;
+export type Middleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => any;
 
 /** 请求处理函数类型（允许返回 any，mock 环境中返回值不会被使用）
  *  注意：express 5.x 的 RequestHandler 要求返回 void | Promise<void>，
@@ -28,10 +33,8 @@ export interface MiddlewareConfig {
   admin?: boolean;
   /** 是否需要超级管理员权限 */
   superAdmin?: boolean;
-  /** 参数校验函数 */
-  validate?: (data: any) => string | null;
-  /** 参数来源（body/query/params） */
-  validateSource?: 'body' | 'query' | 'params';
+  /** 参数校验函数（自动合并 body/query/params），校验失败时抛出 BusinessError */
+  validate?: (data: any) => void;
   /** 自定义中间件列表 */
   custom?: Middleware[];
 }
@@ -40,13 +43,13 @@ export interface MiddlewareConfig {
 
 /**
  * 认证中间件
- * 验证用户是否登录，未登录返回 401
+ * 验证用户是否登录，未登录返回统一失败响应（HTTP 200 + success: false）
  * 将用户信息挂载到 req.currentUser 上
  */
-export const authMiddleware: Middleware = (req, res, next) => {
-  const user = getCurrentUserFromToken(req);
+export const authMiddleware: Middleware = async (req, res, next) => {
+  const user = await getCurrentUserFromToken(req);
   if (!user) {
-    res.status(401).json(fail('未登录或登录已过期', 401));
+    res.json(fail('未登录或登录已过期', CommonErrorCodes.UNAUTHORIZED));
     return;
   }
   // 将用户信息挂载到 req 对象上，供后续中间件和控制器使用
@@ -58,13 +61,13 @@ export const authMiddleware: Middleware = (req, res, next) => {
 
 /**
  * 管理员权限中间件
- * 验证用户是否为管理员，不是返回 403
+ * 验证用户是否为管理员，不是返回统一失败响应（HTTP 200 + success: false）
  * 依赖 authMiddleware 先执行（req.currentUser）
  */
 export const adminMiddleware: Middleware = (req, res, next) => {
   const user = (req as any).currentUser;
   if (!user || !user.is_staff) {
-    res.status(403).json(fail('没有权限访问', 403));
+    res.json(fail('没有权限访问', CommonErrorCodes.FORBIDDEN));
     return;
   }
   next();
@@ -72,13 +75,13 @@ export const adminMiddleware: Middleware = (req, res, next) => {
 
 /**
  * 超级管理员权限中间件
- * 验证用户是否为超级管理员，不是返回 403
+ * 验证用户是否为超级管理员，不是返回统一失败响应（HTTP 200 + success: false）
  * 依赖 authMiddleware 先执行（req.currentUser）
  */
 export const superAdminMiddleware: Middleware = (req, res, next) => {
   const user = (req as any).currentUser;
   if (!user || !user.is_superuser) {
-    res.status(403).json(fail('只有超级管理员可以访问', 403));
+    res.json(fail('只有超级管理员可以访问', CommonErrorCodes.FORBIDDEN));
     return;
   }
   next();
@@ -88,21 +91,39 @@ export const superAdminMiddleware: Middleware = (req, res, next) => {
 
 /**
  * 参数校验中间件工厂
- * @param validate 校验函数，返回错误信息（null 表示校验通过）
- * @param source 参数来源（body/query/params）
+ * 根据 HTTP 方法自动推断主要参数来源（GET/HEAD → query，其他 → body），
+ * 并自动合并 URL params（如 /api/category/:id 中的 id），params 优先级最高
+ * params 中的纯数字字符串会自动转换为 number 类型
+ * 校验函数通过抛出 BusinessError 表示校验失败
+ * @param validate 校验函数，校验失败时 throw new BusinessError()
  */
 export const validateMiddleware = (
-  validate: (data: any) => string | null,
-  source: 'body' | 'query' | 'params' = 'body',
+  validate: (data: any) => void,
 ): Middleware => {
   return (req, res, next) => {
-    const data = req[source];
-    const error = validate(data);
-    if (error) {
-      res.json(fail(error));
-      return;
+    try {
+      // GET/HEAD 请求参数在 query，其他请求参数在 body
+      const source = req.method === 'GET' || req.method === 'HEAD' ? 'query' : 'body';
+      // 处理 params：纯数字字符串自动转换为 number，其他保持字符串
+      const processedParams: Record<string, any> = {};
+      for (const [key, value] of Object.entries(req.params)) {
+        if (typeof value === 'string' && value !== '' && !isNaN(Number(value))) {
+          processedParams[key] = Number(value);
+        } else {
+          processedParams[key] = value;
+        }
+      }
+      // 合并 params（URL 路径参数优先级最高，覆盖 body/query 中的同名字段）
+      const data = { ...req[source], ...processedParams };
+      validate(data);
+      next();
+    } catch (error) {
+      if (error instanceof BusinessError) {
+        res.json(fail(error.message, error.errorCode));
+        return;
+      }
+      throw error;
     }
-    next();
   };
 };
 
@@ -124,22 +145,6 @@ export const logMiddleware: Middleware = (req, res, next) => {
   });
 
   next();
-};
-
-// ==================== 错误处理中间件 ====================
-
-/**
- * 错误处理中间件
- * 统一处理未捕获的异常
- */
-export const errorHandlerMiddleware = (
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  console.error('[Mock Error]', err);
-  res.status(500).json(fail('服务器内部错误', 500));
 };
 
 // ==================== 中间件组合器 ====================
@@ -172,13 +177,18 @@ export const compose = (
             });
 
             // 如果中间件返回 Promise，等待它执行完成
-            if (result && typeof (result as Promise<void>).then === 'function') {
-              (result as Promise<void>).then(() => {
-                // 中间件执行完成后，如果没有调用 next()，说明直接发送了响应
-                if (!nextCalled) {
-                  resolve();
-                }
-              }).catch(reject);
+            if (
+              result &&
+              typeof (result as Promise<void>).then === 'function'
+            ) {
+              (result as Promise<void>)
+                .then(() => {
+                  // 中间件执行完成后，如果没有调用 next()，说明直接发送了响应
+                  if (!nextCalled) {
+                    resolve();
+                  }
+                })
+                .catch(reject);
             } else {
               // 同步中间件：使用 setImmediate 检查是否调用了 next()
               // 如果没有调用，说明中间件直接发送了响应
@@ -190,7 +200,9 @@ export const compose = (
             }
           } catch (err) {
             console.error('[Mock Middleware Error]', err);
-            res.status(500).json(fail('服务器内部错误', 500));
+            res
+              .status(500)
+              .json(fail('服务器内部错误', CommonErrorCodes.INTERNAL_ERROR));
             resolve();
           }
         } else {
@@ -198,14 +210,19 @@ export const compose = (
           try {
             const result = handler(req, res);
             // 如果 handler 返回 Promise，等待它执行完成
-            if (result && typeof (result as Promise<void>).then === 'function') {
+            if (
+              result &&
+              typeof (result as Promise<void>).then === 'function'
+            ) {
               (result as Promise<void>).then(resolve).catch(reject);
             } else {
               resolve();
             }
           } catch (err) {
             console.error('[Mock Handler Error]', err);
-            res.status(500).json(fail('服务器内部错误', 500));
+            res
+              .status(500)
+              .json(fail('服务器内部错误', CommonErrorCodes.INTERNAL_ERROR));
             resolve();
           }
         }
@@ -215,18 +232,6 @@ export const compose = (
     // 等待所有中间件和 handler 执行完成
     await next();
   };
-};
-
-/**
- * 带自定义中间件的包装器
- * @param middlewares 中间件列表
- * @param handler 请求处理函数
- */
-export const withCustomMiddleware = (
-  middlewares: Middleware[],
-  handler: RequestHandler,
-): RequestHandler => {
-  return compose(middlewares, handler);
 };
 
 // ==================== 带配置的中间件包装器 ====================
@@ -258,9 +263,9 @@ export const withMiddleware = (
     middlewares.push(superAdminMiddleware);
   }
 
-  // 参数校验中间件
+  // 参数校验中间件（自动合并 body/query/params）
   if (config.validate) {
-    middlewares.push(validateMiddleware(config.validate, config.validateSource || 'body'));
+    middlewares.push(validateMiddleware(config.validate));
   }
 
   // 自定义中间件

@@ -59,6 +59,25 @@
   }
 }
 
+// 空状态
+.doctree-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 24px 16px;
+
+  :global(.ant-empty) {
+    margin: 0;
+  }
+
+  :global(.ant-empty-description) {
+    color: #999;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+}
+
 // 树节点
 .doctree-tree {
   background: transparent;
@@ -88,6 +107,7 @@
   }
 
   // 图标元素
+  /* stylelint-disable-next-line selector-class-pattern */
   .ant-tree-iconEle {
     display: flex;
     align-items: center;

@@ -38,11 +38,13 @@ const useCurrentUser = (): UseCurrentUserResult => {
   const dispatch = useDispatch();
   const { initialState } = useModel('@@initialState');
 
-  const dvaCurrentUser = useShallowSelector(
-    (state: RootState) => state.user.currentUser,
+  // 合并为一次 selector 调用，同时获取 currentUser 和 loading
+  const { currentUser: dvaCurrentUser, loading } = useShallowSelector(
+    (state: RootState) => ({
+      currentUser: state.user.currentUser,
+      loading: state.userLogin.loading,
+    }),
   );
-
-  const loading = useShallowSelector((state: RootState) => state.userLogin.loading);
 
   const currentUser = dvaCurrentUser || initialState?.currentUser || null;
 

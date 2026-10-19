@@ -18,7 +18,9 @@
  * 【自动扫描约定】
  * - 扫描 mock/Entities/*.ts 文件（排除 index.ts）
  * - 自动识别以 init 开头、Data 结尾的导出函数
- * - 例如：initProjectData、initDocData、initUserData
+ * - 例如：initDocData
+ * - 注意：project 模块使用 initProjectMongoStats 和 initCategoryCache（文件底部自调用，不参与自动扫描）
+ * - 注意：user 模块使用 syncUserToRedisAndMongo（文件底部自调用，不参与自动扫描）
  * - 新增模块只需在 Entities 中创建 initXxxData 函数，无需修改本文件
  *
  * 【依赖说明】

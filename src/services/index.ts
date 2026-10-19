@@ -78,6 +78,7 @@ export {
 /** 文档分类管理 */
 export {
   getProjectDocCategories as getDocCategoriesByProject,
+  getDocCategoriesByProjectId,
   getDocCategoryList,
   createDocCategory,
   updateDocCategory,

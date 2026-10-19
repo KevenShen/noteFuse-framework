@@ -52,7 +52,7 @@ const CategoryNode: React.FC<{
           </div>
         )}
         {catDocs.map((doc) => {
-          const curVer = doc.versions?.find((v: any) => v.is_current);
+          const curVer = doc.versions?.find((v: any) => v.id === doc.current_version_id);
           return (
             <a
               key={doc.id}

@@ -47,13 +47,20 @@ export default {
       state: DocVersionsState,
       { payload }: { payload: DocVersion },
     ) {
-      // 将所有旧版本设为非当前
-      state.docVersions = state.docVersions.map((v) => ({
-        ...v,
-        is_current: false,
-      }));
-      // 添加新版本（is_current 为 true）
+      // 直接添加新版本（当前版本由 doc.current_version_id 标识，无需修改版本列表）
       state.docVersions.push(payload);
+    },
+    /** 乐观更新版本（编辑版本后立即更新左栏，不依赖重新获取） */
+    upsertDocVersion(
+      state: DocVersionsState,
+      { payload }: { payload: DocVersion },
+    ) {
+      const index = state.docVersions.findIndex((v) => v.id === payload.id);
+      if (index >= 0) {
+        state.docVersions[index] = { ...state.docVersions[index], ...payload };
+      } else {
+        state.docVersions.push(payload);
+      }
     },
   },
 
@@ -171,11 +178,14 @@ export default {
           versionId: id,
           ...data,
         });
+        if (!res?.success) {
+          message.error(res?.message || '版本更新失败');
+          return null;
+        }
         message.success('版本更新成功');
-        // 重新获取版本列表
-        const version = res.data;
-        if (version?.doc_id) {
-          yield put({ type: 'fetchDocVersions', payload: version.doc_id });
+        // 乐观更新本地版本列表，不依赖重新获取
+        if (res.data) {
+          yield put({ type: 'upsertDocVersion', payload: res.data });
         }
         return res.data;
       } catch (e) {

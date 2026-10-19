@@ -58,10 +58,10 @@ const DocTitle: React.FC<DocTitleProps> = ({
       {currentVersion && (
         <div className="doc-version-info">
           <Tag
-            color={currentVersion.is_current ? 'green' : 'orange'}
+            color={currentVersion.id === doc?.current_version_id ? 'green' : 'orange'}
             className="version-tag"
           >
-            {currentVersion.is_current ? '当前版本' : '历史版本'}
+            {currentVersion.id === doc?.current_version_id ? '当前版本' : '历史版本'}
           </Tag>
           <span className="version-text">{currentVersion.version}</span>
           <span className="version-divider">·</span>

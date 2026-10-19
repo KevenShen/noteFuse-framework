@@ -23,8 +23,6 @@ export interface DocVersion {
   version: string;
   /** 版本状态 */
   status: VersionStatus;
-  /** 是否为当前版本 */
-  is_current: boolean;
   author_name: string;
   create_time: string;
   update_time: string;
@@ -39,6 +37,8 @@ export interface DocItem {
   name: string;
   doc_category_id: number;
   sort: number;
+  /** 当前版本 ID（用于判断版本是否为当前版本） */
+  current_version_id?: number;
   /** 版本列表（扁平化数据，可选，启用多版本功能时使用） */
   versions?: DocVersion[];
   [key: string]: any;
@@ -56,6 +56,8 @@ export interface TreeNode {
   children?: TreeNode[];
   /** 版本节点的父文档 ID */
   doc_id?: number;
+  /** 节点层级（1=顶级分类，2=二级分类，3=三级分类） */
+  level?: number;
 }
 
 /** 管理操作类型 */
@@ -83,6 +85,8 @@ export interface DocTreeProps {
   categories: CategoryItem[];
   /** 文档列表 */
   docs: DocItem[];
+  /** 当前文集 ID（用于"进入目录管理"跳转时携带参数） */
+  projectId?: number;
   /** 当前选中的文档 key */
   selectedKeys?: string[];
   /** 选择文档回调 */
@@ -95,6 +99,8 @@ export interface DocTreeProps {
   defaultExpandAll?: boolean;
   /** 是否显示管理按钮（默认 true） */
   showManage?: boolean;
+  /** 最大分类层级数（2=仅二级，3=支持三级），默认 3。达到 maxLevel 时隐藏"新增子分类"操作 */
+  maxLevel?: number;
   /** 新建文档回调 */
   onCreateDoc?: (categoryId?: number) => void;
   /** 管理分类回调（支持异步，返回 Promise） */

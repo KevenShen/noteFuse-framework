@@ -58,9 +58,10 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
   const dispatch = useDispatch();
 
   // 自行从 model 获取状态
-  const { activeTab, docVersions } = useShallowSelector((state: any) => ({
+  const { activeTab, docVersions, currentDoc } = useShallowSelector((state: any) => ({
     activeTab: state.docEditor.activeRightTab,
     docVersions: state.docVersions.docVersions,
+    currentDoc: state.docDetail.currentDoc,
   }));
 
   // ==================== 插入内容到编辑器（组件自治） ====================
@@ -101,14 +102,15 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
 
   // 当前文档的版本
   const docVersionsList = useMemo(() => {
+    const curVerId = currentDoc?.current_version_id;
     return (docVersions || [])
       .filter((v: any) => v.doc_id === docId)
       .sort((a: any, b: any) => {
-        if (a.is_current && !b.is_current) return -1;
-        if (!a.is_current && b.is_current) return 1;
+        if (a.id === curVerId && b.id !== curVerId) return -1;
+        if (a.id !== curVerId && b.id === curVerId) return 1;
         return new Date(b.update_time).getTime() - new Date(a.update_time).getTime();
       });
-  }, [docVersions, docId]);
+  }, [docVersions, docId, currentDoc?.current_version_id]);
 
   // 切换 Tab
   const handleTabChange = (tab: RightPanelTab) => {
@@ -213,10 +215,10 @@ const EditorRightPanel: React.FC<EditorRightPanelProps> = ({
                   <List.Item.Meta
                     title={
                       <Space size={8}>
-                        <span style={{ fontWeight: version.is_current ? 600 : 400 }}>
+                        <span style={{ fontWeight: version.id === currentDoc?.current_version_id ? 600 : 400 }}>
                           {version.version}
                         </span>
-                        {version.is_current && (
+                        {version.id === currentDoc?.current_version_id && (
                           <Tag color="green" style={{ margin: 0 }}>
                             当前
                           </Tag>

@@ -47,10 +47,10 @@ import * as collectService from './service';
  * 【注意】
  * 这里使用 require 动态导入，避免循环依赖问题
  */
-const getUserId = (req: Request): number => {
+const getUserId = async (req: Request): Promise<number> => {
   try {
-    const { getCurrentUserFromToken } = require('../User/service');
-    const user = getCurrentUserFromToken(req);
+    const { getCurrentUserFromToken } = require('../../Core/auth');
+    const user = await getCurrentUserFromToken(req);
     return user?.id || 1;
   } catch (error) {
     return 1;
@@ -72,7 +72,7 @@ class CollectController {
    */
   async getCollectGroups(req: Request, res: Response): Promise<void> {
     await delay(200);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = {
       type: req.query.type as CollectType | undefined,
     };
@@ -87,7 +87,7 @@ class CollectController {
    */
   async createCollectGroup(req: Request, res: Response): Promise<void> {
     await delay(200);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = req.body as CreateCollectGroupRequest;
     await handleService<CreateCollectGroupResponse>(
       res,
@@ -108,7 +108,6 @@ class CollectController {
       res,
       () => collectService.updateCollectGroup(groupId, data),
       '分组更新成功',
-      404,
     );
   }
 
@@ -123,7 +122,6 @@ class CollectController {
       res,
       () => collectService.deleteCollectGroup(groupId),
       '分组删除成功',
-      404,
     );
   }
 
@@ -135,7 +133,7 @@ class CollectController {
    */
   async getCollectList(req: Request, res: Response): Promise<void> {
     await delay(200);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = {
       page: req.query.page ? Number(req.query.page) : undefined,
       page_size: req.query.page_size ? Number(req.query.page_size) : undefined,
@@ -154,7 +152,7 @@ class CollectController {
    */
   async createCollect(req: Request, res: Response): Promise<void> {
     await delay(200);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = req.body as CreateCollectRequest;
     await handleService<CreateCollectResponse>(
       res,
@@ -174,7 +172,6 @@ class CollectController {
       res,
       () => collectService.deleteCollect(collectId),
       '已取消收藏',
-      404,
     );
   }
 
@@ -190,7 +187,6 @@ class CollectController {
       res,
       () => collectService.moveCollect(collectId, data),
       '移动成功',
-      404,
     );
   }
 
@@ -200,7 +196,7 @@ class CollectController {
    */
   async checkCollected(req: Request, res: Response): Promise<void> {
     await delay(100);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = {
       type: req.query.type as string | undefined,
       target_id: req.query.target_id ? Number(req.query.target_id) : 0,

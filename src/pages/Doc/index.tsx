@@ -10,9 +10,9 @@ import {
 } from '@/hooks';
 import ProjectDocDetailLayout from '@/layouts/ProjectDocDetailLayout';
 import {
+  getDocCategoriesByProjectId,
   getDocDetail,
   getProjectDetail,
-  getProjectDocCategories,
   getProjectDocVersions,
   getProjectDocs,
 } from '@/services';
@@ -21,7 +21,7 @@ import {
   UnorderedListOutlined,
   VerticalAlignTopOutlined,
 } from '@ant-design/icons';
-import { history, useClientLoaderData, useDispatch } from '@umijs/max';
+import { history, useClientLoaderData, useDispatch, useLocation } from '@umijs/max';
 import { useSetState } from 'ahooks';
 import { FloatButton, Space, Tag } from 'antd';
 import React, { useEffect, useMemo, useRef } from 'react';
@@ -47,8 +47,8 @@ export async function clientLoader() {
     docVersions: [],
   };
   const extractData = (res: any) => (res?.data !== undefined ? res.data : res);
-  const pathname = history.location.pathname;
-  const search = history.location.search;
+  const pathname = window.location.pathname;
+  const search = window.location.search;
   const docId = Number(pathname.split('/').pop() || 0);
   const searchParams = new URLSearchParams(search);
   const projectId = Number(searchParams.get('project_id') || 0);
@@ -57,22 +57,33 @@ export async function clientLoader() {
   if (!docId || !projectId) return EMPTY_DATA;
 
   try {
+    // 使用 Promise.allSettled：单个接口失败不影响其他数据
+    // （如新文档暂无版本时 getDocDetail 可能失败，但文集/分类/文档列表仍需正常加载）
     const [projectRes, docRes, categoriesRes, docsRes, versionsRes] =
-      await Promise.all([
+      await Promise.allSettled([
         getProjectDetail({ id: projectId }),
         getDocDetail(
           versionId ? { id: docId, version: Number(versionId) } : { id: docId },
         ),
-        getProjectDocCategories({ id: projectId }),
+        getDocCategoriesByProjectId({ projectId }),
         getProjectDocs({ id: projectId }),
         getProjectDocVersions({ id: projectId }),
       ]);
     return {
-      currentProject: extractData(projectRes),
-      currentDoc: extractData(docRes),
-      docCategoryList: extractData(categoriesRes) || [],
-      docList: extractData(docsRes) || [],
-      docVersions: extractData(versionsRes) || [],
+      currentProject:
+        projectRes.status === 'fulfilled' ? extractData(projectRes.value) : null,
+      currentDoc:
+        docRes.status === 'fulfilled' ? extractData(docRes.value) : null,
+      docCategoryList:
+        categoriesRes.status === 'fulfilled'
+          ? extractData(categoriesRes.value) || []
+          : [],
+      docList:
+        docsRes.status === 'fulfilled' ? extractData(docsRes.value) || [] : [],
+      docVersions:
+        versionsRes.status === 'fulfilled'
+          ? extractData(versionsRes.value) || []
+          : [],
     };
   } catch {
     return EMPTY_DATA;
@@ -81,6 +92,7 @@ export async function clientLoader() {
 
 const DocPage: React.FC = () => {
   const dispatch = useDispatch();
+  const location = useLocation();
 
   // 从路径 /doc/:id 解析 id
   const docId = Number(location.pathname.split('/').pop() || '1');
@@ -144,6 +156,7 @@ const DocPage: React.FC = () => {
   }, [modelCurrentDoc, clientLoaderData]);
 
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
+  // resetKey=docId：路由参数变化时重置同步状态，确保加载新文档的数据
   useClientLoaderSync({
     clientLoaderData,
     actionType: 'docDetail/saveDocDetailInitialData',
@@ -154,6 +167,7 @@ const DocPage: React.FC = () => {
       currentDoc: data.currentDoc,
     }),
     hasData: (data) => !!data?.currentDoc || !!data?.docList?.length,
+    resetKey: docId,
   });
 
   useClientLoaderSync({
@@ -161,6 +175,7 @@ const DocPage: React.FC = () => {
     actionType: 'projectDetail/saveCurrentProject',
     mapData: (data) => data.currentProject,
     hasData: (data) => !!data?.currentProject,
+    resetKey: docId,
   });
 
   // ==================== 页面级 UI 状态（仅保留布局相关） ====================

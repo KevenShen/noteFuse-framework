@@ -13,11 +13,16 @@ import {
   useMergedState,
   useShallowSelector,
 } from '@/hooks';
-import { getDocCategoryList } from '@/services';
-import { extractResponseData } from '@/utils/clientLoader';
-import { useClientLoaderData, useDispatch } from '@umijs/max';
-import { Select, Typography } from 'antd';
-import { useCallback } from 'react';
+import { getDocCategoriesByProjectId } from '@/services';
+import { extractListWithPagination } from '@/utils/clientLoader';
+import {
+  history,
+  useClientLoaderData,
+  useDispatch,
+  useLocation,
+} from '@umijs/max';
+import { Typography } from 'antd';
+import { useCallback, useEffect } from 'react';
 
 const { Title, Text } = Typography;
 
@@ -56,51 +61,30 @@ const categoryExtraFields: ExtraFieldConfig[] = [
       return <span style={{ fontSize: 12, color: '#999' }}>{icon}</span>;
     },
   },
-  {
-    name: 'project_id',
-    label: '所属文集',
-    // 文集选择下拉框（创建时必填，编辑时可选）
-    renderFormItem: (
-      <Select
-        placeholder="请选择所属文集"
-        style={{ width: '100%' }}
-        options={[
-          { value: 1, label: '个人知识库' },
-          { value: 2, label: '工作文档' },
-          { value: 3, label: '学习笔记' },
-        ]}
-      />
-    ),
-    required: true,
-    showColumn: true,
-    width: 150,
-    ellipsis: true,
-    render: (projectId: number) => {
-      const projectNames: Record<number, string> = {
-        1: '个人知识库',
-        2: '工作文档',
-        3: '学习笔记',
-      };
-      return (
-        <span style={{ color: '#666' }}>
-          {projectNames[projectId] || `文集 #${projectId}`}
-        </span>
-      );
-    },
-  },
 ];
 
 // ==================== clientLoader：页面渲染前预加载分类列表 ====================
+// 注意：Umi Max 的 clientLoader 不接收路由参数，需从 history.location 解析
+// 使用路径参数版 API /api/doc/categories/:projectId，避免与 /api/doc/categories 路由冲突
 export async function clientLoader() {
   try {
-    const categoriesRes = await getDocCategoryList();
-    console.log('clientLoader docCategoriesRes', categoriesRes);
+    // 从 history.location 解析 query 参数
+    const searchParams = new URLSearchParams(history.location.search);
+    const projectId = searchParams.get('project_id')
+      ? Number(searchParams.get('project_id'))
+      : undefined;
 
-    // 使用统一的工具函数提取数据
-    const categoriesData = extractResponseData<any>(categoriesRes, []);
-    const docCategoryList = Array.isArray(categoriesData)
-      ? categoriesData
-      : categoriesData.list || [];
+    if (!projectId) {
+      return { docCategoryList: [] };
+    }
+
+    const categoriesRes = await getDocCategoriesByProjectId({
+      projectId,
+    });
+
+    // 使用统一的工具函数提取数据（兼容直接数组与 { list } 两种结构）
+    const { list: docCategoryList } =
+      extractListWithPagination<any>(categoriesRes);
 
     return {
       docCategoryList,
@@ -115,12 +99,13 @@ export async function clientLoader() {
 const DocCategoryManager = () => {
   // ==================== Dva Hooks ====================
   const dispatch = useDispatch();
-  // 使用 useShallowSelector 浅比较，避免无关字段（如 loading）变化时触发重渲染
-  const { docCategoryList: modelCategoryList, loading } =
-    useShallowSelector((state: any) => ({
+  const location = useLocation();
+  // 使用 useShallowSelector 浅比较，避免无关字段变化时触发重渲染
+  const { docCategoryList: modelCategoryList } = useShallowSelector(
+    (state: any) => ({
       docCategoryList: state.docCategory.docCategoryList,
-      loading: state.docDetail.loading,
-    }));
+    }),
+  );
 
   // useClientLoaderData 返回 { data: clientLoader返回值 }
   const { data: clientLoaderData } = useClientLoaderData() as {
@@ -138,29 +123,55 @@ const DocCategoryManager = () => {
   // ==================== 数据同步：clientLoader 预加载数据 → Dva model ====================
   useClientLoaderSync({
     clientLoaderData,
-    actionType: 'docDetail/saveDocDetailInitialData',
-    mapData: (data) => ({
-      categories: data.docCategoryList,
-      docs: [],
-      versions: [],
-      currentDoc: null,
-    }),
+    actionType: 'docCategory/saveDocCategoryList',
+    mapData: (data) => data.docCategoryList,
+    hasData: (data) => !!data?.docCategoryList?.length,
   });
+
+  // ==================== 兜底加载：clientLoader 失败时主动通过 model effect 加载 ====================
+  // 从 URL 解析 project_id
+  const searchParams = new URLSearchParams(location.search);
+  const projectId = searchParams.get('project_id')
+    ? Number(searchParams.get('project_id'))
+    : undefined;
+
+  useEffect(() => {
+    // 没有 project_id 时不加载
+    if (!projectId) return;
+    // model 和 clientLoader 都没有数据时，主动加载
+    if (
+      (!modelCategoryList || modelCategoryList.length === 0) &&
+      (!clientLoaderData?.docCategoryList ||
+        clientLoaderData.docCategoryList.length === 0)
+    ) {
+      dispatch({
+        type: 'docCategory/fetchProjectCategories',
+        payload: projectId,
+      });
+    }
+  }, [modelCategoryList, clientLoaderData, projectId, dispatch]);
 
   // ==================== 事件处理 ====================
 
   const onRefresh = useCallback(() => {
-    dispatch({ type: 'docCategory/fetchDocCategoryList' });
-  }, [dispatch]);
+    if (projectId) {
+      dispatch({ type: 'docCategory/fetchProjectCategories', payload: projectId });
+    }
+  }, [dispatch, projectId]);
 
   const onAdd = useCallback(
     (values: Record<string, any>, parentId?: number | string | null) => {
       dispatch({
         type: 'docCategory/handleCreateDocCategory',
-        payload: { ...values, parent_id: parentId ?? 0 },
+        // 自动注入 project_id（从 URL 获取），不需要用户在表单中选择
+        payload: {
+          ...values,
+          project_id: projectId,
+          parent_id: parentId ?? 0,
+        },
       });
     },
-    [dispatch],
+    [dispatch, projectId],
   );
 
   const onEdit = useCallback(
@@ -175,14 +186,22 @@ const DocCategoryManager = () => {
 
   const onDelete = useCallback(
     (record: CategoryItem) => {
-      dispatch({ type: 'docCategory/handleDeleteDocCategory', payload: record.id });
+      dispatch({
+        type: 'docCategory/handleDeleteDocCategory',
+        // antd Table 的 record.id 可能为 string，后端要求 number
+        payload: Number(record.id),
+      });
     },
     [dispatch],
   );
 
   const onBatchDelete = useCallback(
     (keys: (number | string)[]) => {
-      dispatch({ type: 'docCategory/handleBatchDeleteDocCategories', payload: keys });
+      dispatch({
+        type: 'docCategory/handleBatchDeleteDocCategories',
+        // antd Table 选中的 key 可能为 string，后端要求 number[]
+        payload: keys.map(Number),
+      });
     },
     [dispatch],
   );
@@ -191,7 +210,10 @@ const DocCategoryManager = () => {
     (keys: (number | string)[], targetParentId: number | string) => {
       dispatch({
         type: 'docCategory/handleBatchMoveDocCategories',
-        payload: { ids: keys, target_parent_id: targetParentId },
+        payload: {
+          ids: keys.map(Number),
+          target_parent_id: Number(targetParentId),
+        },
       });
     },
     [dispatch],
@@ -199,7 +221,10 @@ const DocCategoryManager = () => {
 
   const onSaveSort = useCallback(
     (sortedList: CategoryItem[]) => {
-      dispatch({ type: 'docCategory/handleSaveDocCategorySort', payload: sortedList });
+      dispatch({
+        type: 'docCategory/handleSaveDocCategorySort',
+        payload: sortedList,
+      });
     },
     [dispatch],
   );
@@ -214,7 +239,6 @@ const DocCategoryManager = () => {
       <div style={{ marginTop: 16 }}>
         <CategoryManager
           dataSource={docCategoryList}
-          loading={loading}
           maxLevel={3}
           sortable
           selectable

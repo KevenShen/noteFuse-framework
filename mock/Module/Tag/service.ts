@@ -23,8 +23,8 @@
  */
 
 import { BusinessError } from '../../Core';
-import { docs, docVersions } from '../../Entities/doc';
-import { projects } from '../../Entities/project';
+import { docTable, docVersionTable } from '../../Entities/doc';
+import { projectTable } from '../../Entities/project';
 import {
   tagCategoryTable,
   tagTable,
@@ -602,17 +602,22 @@ export async function getTagDocs(
     .map((r) => r.target_id);
 
   // 3. 关联目标信息（文档或文集）
-  // 使用静态导入的 docs, projects, docVersions（避免动态 require 在 Umi mock 环境中解析失败）
+  // 预取所有文档和版本，避免在 map 中重复查询
+  const [allDocs, allVersions, allProjects] = await Promise.all([
+    docTable.findAll(),
+    docVersionTable.findAll(),
+    projectTable.findAll(),
+  ]);
 
   const itemList: Array<DocTagItem | ProjectTagItem> = (
     await Promise.all(
       targetIds.map(async (targetId) => {
         if (type === 'doc') {
-          const doc = docs.find((d: any) => d.id === targetId);
+          const doc = allDocs.find((d: any) => d.id === targetId);
           if (!doc) return null;
-          const project = projects.find((p: any) => p.id === doc.project_id);
-          const currentVersion = docVersions.find(
-            (v: any) => v.doc_id === doc.id && v.is_current,
+          const project = allProjects.find((p: any) => p.id === doc.project_id);
+          const currentVersion = allVersions.find(
+            (v: any) => v.doc_id === doc.id && v.id === doc.current_version_id,
           );
           // 该文档的所有标签
           const docTagIds = allRelations
@@ -631,7 +636,7 @@ export async function getTagDocs(
           } as DocTagItem;
         } else {
           // 文集
-          const project = projects.find((p: any) => p.id === targetId);
+          const project = allProjects.find((p: any) => p.id === targetId);
           if (!project) return null;
           // 该文集的所有标签
           const projectTagIds = allRelations
@@ -719,8 +724,7 @@ export async function addDocTag(
   const tagId = data.tag_id;
 
   // 1. 检查文档是否存在
-  // 使用静态导入的 docs（避免动态 require 在 Umi mock 环境中解析失败）
-  const doc = docs.find((d: any) => d.id === docId);
+  const doc = await docTable.findById(docId);
   if (!doc) {
     throw new BusinessError('文档不存在');
   }

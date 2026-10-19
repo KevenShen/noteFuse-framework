@@ -61,8 +61,9 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   }));
 
   // 自行从 docVersions model 获取版本列表，内部计算 currentVersion
-  const { docVersions } = useShallowSelector((state: any) => ({
+  const { docVersions, currentDoc } = useShallowSelector((state: any) => ({
     docVersions: state.docVersions.docVersions,
+    currentDoc: state.docDetail.currentDoc,
   }));
 
   // 当前版本（内部计算）
@@ -72,9 +73,9 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
       return docVersions.find((v: any) => v.id === Number(versionId)) || null;
     }
     return (
-      docVersions.find((v: any) => v.doc_id === docId && v.is_current) || null
+      docVersions.find((v: any) => v.doc_id === docId && v.id === currentDoc?.current_version_id) || null
     );
-  }, [docVersions, docId, versionId]);
+  }, [docVersions, docId, versionId, currentDoc?.current_version_id]);
 
   const isPreview = editorMode === 'preview';
 

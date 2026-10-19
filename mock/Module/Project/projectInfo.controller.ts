@@ -9,6 +9,7 @@ import type {
   AiOutlineData,
   GetAiOutlineResponse,
   GetProjectCategoriesResponse,
+  GetProjectDetailResponse,
   GetProjectDocVersionsResponse,
   GetProjectDocsResponse,
   SaveAiOutlineRequest,
@@ -23,6 +24,19 @@ import { projectInfoService } from './projectInfo.service';
  * 包含：文档分类、文档列表、文档版本、AI 大纲、文集简介等子资源接口
  */
 class ProjectInfoController {
+  // ==================== 文集详情 ====================
+
+  /** 获取文集详情 */
+  async getProjectDetail(req: Request, res: Response) {
+    await delay(100);
+    const id = Number(req.params.id);
+    await handleService<GetProjectDetailResponse>(
+      res,
+      () => projectInfoService.getProjectDetail(id),
+      '获取成功',
+    );
+  }
+
   // ==================== 文档分类 ====================
 
   /** 获取文集下的文档分类列表 */
@@ -33,7 +47,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.getProjectCategories(id),
       undefined,
-      404,
     );
   }
 
@@ -47,7 +60,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.getProjectDocs(id),
       undefined,
-      404,
     );
   }
 
@@ -61,7 +73,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.getProjectDocVersions(id),
       undefined,
-      404,
     );
   }
 
@@ -75,7 +86,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.getAiOutline(id),
       undefined,
-      404,
     );
   }
 
@@ -87,7 +97,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.generateAiOutline(id),
       '大纲生成成功',
-      404,
     );
   }
 
@@ -100,7 +109,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.saveAiOutline(id, summary, chapters),
       '大纲保存成功',
-      404,
     );
   }
 
@@ -115,7 +123,6 @@ class ProjectInfoController {
       res,
       () => projectInfoService.updateProjectIntro(id, intro),
       '简介更新成功',
-      404,
     );
   }
 }

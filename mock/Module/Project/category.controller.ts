@@ -13,8 +13,7 @@ import type {
   CreateCategoryRequest,
   CreateCategoryResponse,
   DeleteCategoryResponse,
-  GetCategoryListRequest,
-  GetCategoryListWithProjectCountResponse,
+  GetCategoryListResponse,
   SaveCategorySortRequest,
   SaveCategorySortResponse,
   UpdateCategoryRequest,
@@ -29,23 +28,24 @@ import { categoryService } from './category.service';
 class CategoryController {
   // ==================== 分类高级操作 ====================
 
-  /** 获取分类列表（含后代文集数汇总） */
-  async getCategoryListWithProjectCount(req: Request, res: Response) {
+  /** 获取分类列表（统一带统计字段：project_count + project_ids） */
+  async getCategoryList(_req: Request, res: Response) {
     await delay(100);
-    // 查询参数（parent_id/keyword 预留，当前 service 返回全量后前端过滤）
-    const _query = req.query as GetCategoryListRequest;
-    await handleService<GetCategoryListWithProjectCountResponse>(res, () =>
-      categoryService.getCategoryListWithProjectCount(),
+    // parent_id/keyword 预留，当前 service 返回全量后前端过滤
+    await handleService<GetCategoryListResponse>(
+      res,
+      () => categoryService.getCategoryList(),
+      '获取成功',
     );
   }
 
   /** 创建分类（自动计算 sort） */
-  async createCategoryAdvanced(req: Request, res: Response) {
+  async createCategory(req: Request, res: Response) {
     await delay(200);
     const data = req.body as CreateCategoryRequest;
     await handleService<CreateCategoryResponse>(
       res,
-      () => categoryService.createCategoryAdvanced(data),
+      () => categoryService.createCategory(data),
       '创建成功',
     );
   }
@@ -59,19 +59,18 @@ class CategoryController {
       res,
       () => categoryService.updateCategory(id, data),
       '更新成功',
-      404,
     );
   }
 
   /** 删除分类（含校验） */
-  async deleteCategoryWithCheck(req: Request, res: Response) {
+  async deleteCategory(req: Request, res: Response) {
     await delay(200);
+    // ID 已由 validateParams 中间件校验，直接使用
     const id = Number(req.params.id);
     await handleService<DeleteCategoryResponse>(
       res,
-      () => categoryService.deleteCategoryWithCheck(id),
+      () => categoryService.deleteCategory(id),
       '删除成功',
-      404,
     );
   }
 
@@ -107,7 +106,6 @@ class CategoryController {
       '排序保存成功',
     );
   }
-
 }
 
 export const categoryController = new CategoryController();

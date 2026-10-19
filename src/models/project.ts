@@ -126,6 +126,10 @@ export default {
           user_id: currentUser?.id || 0,
         };
         const res = yield call(projectService.getProjectList, params);
+        if (!res?.success) {
+          message.error(res?.message || '加载文集列表失败');
+          return;
+        }
         yield put({ type: 'saveProjectList', payload: res.data.list });
         yield put({ type: 'saveTotal', payload: res.data.total });
         yield put({
@@ -146,6 +150,10 @@ export default {
     ): Generator<any, any, any> {
       try {
         const res = yield call(projectService.createProject, payload);
+        if (!res?.success) {
+          message.error(res?.message || '创建失败');
+          return null;
+        }
         message.success('创建成功');
         return res;
       } catch (e) {
@@ -163,6 +171,10 @@ export default {
     ): Generator<any, any, any> {
       try {
         const res = yield call(projectService.updateProject, payload);
+        if (!res?.success) {
+          message.error(res?.message || '更新失败');
+          return null;
+        }
         message.success('更新成功');
         return res;
       } catch (e) {
@@ -177,9 +189,14 @@ export default {
       { call, put, select }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(projectService.deleteProject, { id: payload });
-        // 本地乐观移除 + 总数-1，避免删除后再全量拉取
-        yield put({ type: 'removeProject', payload });
+        const res = yield call(projectService.deleteProject, { id: payload });
+        if (!res?.success) {
+          message.error(res?.message || '删除失败');
+          return false;
+        }
+        // 乐观删除：使用后端返回的 deletedId 本地移除 + 总数-1，避免删除后再全量拉取
+        const deletedId: number = res?.data?.deletedId ?? payload;
+        yield put({ type: 'removeProject', payload: deletedId });
         // 分页边界：删空当前页且不是第1页时，回退一页并拉取上一页数据
         const { projectList, pagination } = yield select(
           (state: any) => state.project,
@@ -205,7 +222,11 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(projectService.toggleProjectTop, payload);
+        const res = yield call(projectService.toggleProjectTop, payload);
+        if (!res?.success) {
+          message.error(res?.message || '操作失败');
+          return false;
+        }
         // 置顶后重新获取列表，确保排序正确
         yield put({ type: 'fetchProjectList' });
         message.success(payload.is_top ? '已置顶' : '已取消置顶');

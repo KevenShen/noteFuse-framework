@@ -24,6 +24,7 @@ export default {
     },
     /** 新增或更新文档（扁平化数组，按 id 匹配） */
     upsertDoc(state: DocListState, { payload }: { payload: DocItem }) {
+      if (!payload?.id) return;
       const index = state.docList.findIndex((d) => d.id === payload.id);
       if (index >= 0) {
         state.docList[index] = { ...state.docList[index], ...payload };
@@ -45,10 +46,14 @@ export default {
     ): Generator<any, any, any> {
       try {
         const res = yield call(docListService.getProjectDocs, { id: payload });
+        if (!res?.success) {
+          message.error(res?.message || '加载文档列表失败');
+          return [];
+        }
         yield put({ type: 'saveDocList', payload: res.data });
         return res.data;
-      } catch (e) {
-        message.error('加载文档列表失败');
+      } catch (e: any) {
+        message.error(e?.message || '加载文档列表失败');
         return [];
       }
     },
@@ -63,17 +68,23 @@ export default {
           name: string;
           doc_category_id?: number;
           content?: string;
+          summary?: string;
+          sort?: number;
         };
       },
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
         const res = yield call(docListService.createDoc, payload);
+        if (!res?.success) {
+          message.error(res?.message || '文档创建失败');
+          return null;
+        }
         yield put({ type: 'upsertDoc', payload: res.data });
         message.success('文档创建成功');
         return res.data;
-      } catch (e) {
-        message.error('文档创建失败');
+      } catch (e: any) {
+        message.error(e?.message || '文档创建失败');
         return null;
       }
     },
@@ -100,14 +111,18 @@ export default {
           ? { id: payload.id, ...payload.data }
           : payload;
         const res = yield call(docListService.updateDoc, updateData);
+        if (!res?.success) {
+          message.error(res?.message || '文档更新失败');
+          return null;
+        }
         yield put({
           type: 'upsertDoc',
           payload: { id: payload.id, ...res.data },
         });
         message.success('文档更新成功');
         return res.data;
-      } catch (e) {
-        message.error('文档更新失败');
+      } catch (e: any) {
+        message.error(e?.message || '文档更新失败');
         return null;
       }
     },
@@ -118,12 +133,16 @@ export default {
       { call, put }: any,
     ): Generator<any, any, any> {
       try {
-        yield call(docListService.deleteDoc, { id: payload });
+        const res = yield call(docListService.deleteDoc, { id: payload });
+        if (!res?.success) {
+          message.error(res?.message || '文档删除失败');
+          return false;
+        }
         yield put({ type: 'removeDoc', payload });
         message.success('文档删除成功');
         return true;
-      } catch (e) {
-        message.error('文档删除失败');
+      } catch (e: any) {
+        message.error(e?.message || '文档删除失败');
         return false;
       }
     },

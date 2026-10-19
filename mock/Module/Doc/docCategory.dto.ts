@@ -1,23 +1,33 @@
-/**
- * 文档分类管理 DTO（Data Transfer Object，数据传输对象）
- *
- * 【职责】
- * 定义文档分类管理相关接口请求和响应的数据结构类型
- */
+// mock/Doc/docCategory.dto.ts
+// 文档分类 DTO（Data Transfer Object，数据传输对象）
+// 功能：定义文档分类相关接口请求和响应的数据结构类型
 
 import type { MockDocCategory } from '../../Entities/doc';
 
-// ==================== 文档分类相关 DTO ====================
+// ==================== 公共类型 ====================
 
-/** 分类项（带文档数量） */
-export interface DocCategoryWithDocCount extends MockDocCategory {
+/** 分类项（带统计字段：doc_count + children） */
+export interface DocCategoryWithStats extends MockDocCategory {
   /** 文档数量（含所有后代分类下的文档总数） */
   doc_count: number;
   /** 直接子分类 ID 列表 */
   children?: number[];
 }
 
-/** 获取文档分类列表请求参数 */
+/** 文档分类排序项 */
+export interface DocCategorySortItem {
+  /** 分类 ID */
+  id: number;
+  /** 排序值 */
+  sort: number;
+}
+
+/** 获取文档分类详情响应数据（data 字段内容） */
+export type GetDocCategoryDetailResponse = MockDocCategory;
+
+// ==================== 获取文档分类列表 ====================
+
+/** 获取文档分类列表请求参数（Query） */
 export interface GetDocCategoriesRequest {
   /** 文集 ID（必填） */
   project_id: number;
@@ -33,7 +43,26 @@ export interface GetDocCategoriesRequest {
 export type GetDocCategoriesResponse = MockDocCategory[];
 
 /** 获取带文档数量的分类列表响应数据（data 字段内容） */
-export type GetDocCategoriesWithDocCountResponse = DocCategoryWithDocCount[];
+export type GetDocCategoriesWithStatsResponse = DocCategoryWithStats[];
+
+// ==================== 获取所有文档分类（跨文集） ====================
+
+/** 获取所有文档分类列表请求参数（跨文集，可选筛选） */
+export interface GetAllDocCategoriesRequest {
+  /** 文集 ID（可选，不传表示全部） */
+  project_id?: number;
+  /** 父分类 ID（可选，0 表示顶级分类，不传表示全部） */
+  parent_id?: number;
+  /** 搜索关键词（分类名称） */
+  keyword?: string;
+  /** 是否包含文档数量（默认 true） */
+  include_doc_count?: boolean;
+}
+
+/** 获取所有文档分类列表响应数据（data 字段内容） */
+export type GetAllDocCategoriesResponse = MockDocCategory[];
+
+// ==================== 创建文档分类 ====================
 
 /** 创建文档分类请求参数 */
 export interface CreateDocCategoryRequest {
@@ -52,6 +81,8 @@ export interface CreateDocCategoryRequest {
 /** 创建文档分类响应数据（data 字段内容） */
 export type CreateDocCategoryResponse = MockDocCategory;
 
+// ==================== 更新文档分类 ====================
+
 /** 更新文档分类请求参数 */
 export interface UpdateDocCategoryRequest {
   /** 分类名称（可选，1-50个字符） */
@@ -67,11 +98,18 @@ export interface UpdateDocCategoryRequest {
 /** 更新文档分类响应数据（data 字段内容） */
 export type UpdateDocCategoryResponse = MockDocCategory;
 
+// ==================== 删除文档分类 ====================
+
+/** 删除文档分类请求参数（ID 在 URL params 中） */
+export interface DeleteDocCategoryRequest {
+  /** 分类 ID */
+  id: number;
+}
+
 /** 删除文档分类响应数据（无数据） */
 export type DeleteDocCategoryResponse = null;
 
-
-// ==================== 批量操作 DTO（参照 ProjectCategory） ====================
+// ==================== 批量删除文档分类 ====================
 
 /** 批量删除文档分类请求参数 */
 export interface BatchDeleteDocCategoriesRequest {
@@ -81,6 +119,8 @@ export interface BatchDeleteDocCategoriesRequest {
 
 /** 批量删除文档分类响应数据（无数据） */
 export type BatchDeleteDocCategoriesResponse = null;
+
+// ==================== 批量移动文档分类 ====================
 
 /** 批量移动文档分类请求参数 */
 export interface BatchMoveDocCategoriesRequest {
@@ -93,15 +133,7 @@ export interface BatchMoveDocCategoriesRequest {
 /** 批量移动文档分类响应数据（无数据） */
 export type BatchMoveDocCategoriesResponse = null;
 
-/** 文档分类排序项 */
-export interface DocCategorySortItem {
-  /** 分类 ID */
-  id: number;
-  /** 排序值 */
-  sort: number;
-  /** 父分类 ID（可选，移动时使用） */
-  parent_id?: number;
-}
+// ==================== 保存文档分类排序 ====================
 
 /** 保存文档分类排序请求参数 */
 export interface SaveDocCategorySortRequest {
@@ -111,15 +143,3 @@ export interface SaveDocCategorySortRequest {
 
 /** 保存文档分类排序响应数据（无数据） */
 export type SaveDocCategorySortResponse = null;
-
-/** 获取所有文档分类列表请求参数（跨文集，可选筛选） */
-export interface GetAllDocCategoriesRequest {
-  /** 文集 ID（可选，不传表示全部） */
-  project_id?: number;
-  /** 父分类 ID（可选，0 表示顶级分类，不传表示全部） */
-  parent_id?: number;
-  /** 搜索关键词（分类名称） */
-  keyword?: string;
-  /** 是否包含文档数量（默认 true） */
-  include_doc_count?: boolean;
-}

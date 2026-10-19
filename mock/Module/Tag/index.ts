@@ -45,7 +45,6 @@ export default {
   'GET /api/tags': withMiddleware(
     {
       validate: validateGetTagListRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => tagController.getTagList(req, res),
   ),
@@ -59,7 +58,6 @@ export default {
   'GET /api/tag/categories': withMiddleware(
     {
       validate: validateGetTagCategoriesRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => tagController.getTagCategories(req, res),
   ),
@@ -140,7 +138,6 @@ export default {
   'GET /api/tag/:id/docs': withMiddleware(
     {
       validate: validateGetTagDocsRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) => tagController.getTagDocs(req, res),
   ),

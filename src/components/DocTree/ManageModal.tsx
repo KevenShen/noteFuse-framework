@@ -138,6 +138,32 @@ const ManageModal: React.FC<ManageModalProps> = ({
     }
   }, [visible, action, initialData, form]);
 
+  /**
+   * 自动计算排序值：取指定父分类下所有子分类的最大 sort + 1
+   * 新增分类时调用，确保新分类排在同级最后
+   */
+  const calcAutoSort = (parentId: number): number => {
+    const siblings = categories.filter(
+      (cat) => (cat.parent_id || 0) === parentId,
+    );
+    if (siblings.length === 0) return 1;
+    const maxSort = Math.max(...siblings.map((c) => c.sort || 0));
+    return maxSort + 1;
+  };
+
+  // 监听父分类变化，自动计算排序值（新增分类时）
+  useEffect(() => {
+    if (!visible || action !== 'add-category') return;
+    const parentId = form.getFieldValue('parent_id') ?? 0;
+    form.setFieldsValue({ sort: calcAutoSort(parentId) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, action]);
+
+  // 父分类变化时重新计算排序
+  const handleParentChange = (value: number) => {
+    form.setFieldsValue({ sort: calcAutoSort(value) });
+  };
+
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
@@ -255,7 +281,15 @@ const ManageModal: React.FC<ManageModalProps> = ({
               initialValue={0}
               rules={[{ required: true, message: '请选择父分类' }]}
             >
-              <TreeSelect {...treeSelectProps} />
+              <TreeSelect
+                {...treeSelectProps}
+                onChange={(value) => {
+                  // 新增分类时，父分类变化自动重算排序
+                  if (action === 'add-category') {
+                    handleParentChange(value as number);
+                  }
+                }}
+              />
             </Form.Item>
           )}
 
@@ -278,25 +312,33 @@ const ManageModal: React.FC<ManageModalProps> = ({
             </Form.Item>
           )}
 
-          {/* 文档：副标题（summary），用于列表显示和 Tooltip 提示 */}
-          {!isCategoryAction && (
-            <Form.Item
-              name="summary"
-              label="副标题"
-              extra="简短描述文档内容，用于列表显示和鼠标悬停提示"
-            >
-              <Input.TextArea
-                placeholder="请输入文档副标题（可选）"
-                rows={2}
-                maxLength={200}
-                showCount
-                autoSize={{ minRows: 2, maxRows: 4 }}
-              />
-            </Form.Item>
-          )}
+          {/* 副标题（summary）：分类和文档都支持，用于列表显示和 Tooltip 提示 */}
+          <Form.Item
+            name="summary"
+            label="副标题"
+            extra="简短描述内容，用于列表显示和鼠标悬停提示"
+          >
+            <Input.TextArea
+              placeholder="请输入副标题（可选）"
+              rows={2}
+              maxLength={200}
+              showCount
+              autoSize={{ minRows: 2, maxRows: 4 }}
+            />
+          </Form.Item>
 
-          <Form.Item name="sort" label="排序" initialValue={0}>
-            <InputNumber style={{ width: '100%' }} placeholder="排序值，越小越靠前" />
+          {/* 排序：自动计算，不可编辑（由拖动排序控制） */}
+          <Form.Item
+            name="sort"
+            label="排序"
+            initialValue={0}
+            extra="自动排序，不可手动编辑；拖动分类可调整顺序"
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              disabled
+              placeholder="自动计算"
+            />
           </Form.Item>
         </Form>
       )}

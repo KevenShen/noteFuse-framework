@@ -51,8 +51,9 @@ const EditorContent: React.FC<EditorContentProps> = ({
   }));
 
   // 自行从 docVersions model 获取版本列表，内部计算 currentVersion
-  const { docVersions } = useShallowSelector((state: any) => ({
+  const { docVersions, currentDoc } = useShallowSelector((state: any) => ({
     docVersions: state.docVersions.docVersions,
+    currentDoc: state.docDetail.currentDoc,
   }));
 
   // 当前版本（内部计算，不需要从 props 传入）
@@ -62,9 +63,9 @@ const EditorContent: React.FC<EditorContentProps> = ({
       return docVersions.find((v: any) => v.id === Number(versionId)) || null;
     }
     return (
-      docVersions.find((v: any) => v.doc_id === docId && v.is_current) || null
+      docVersions.find((v: any) => v.doc_id === docId && v.id === currentDoc?.current_version_id) || null
     );
-  }, [docVersions, docId, versionId]);
+  }, [docVersions, docId, versionId, currentDoc?.current_version_id]);
 
   // 文档内容、大纲内容、版本总览内容分别管理（state + ref 双轨，ref 保存最新值避免闭包问题）
   // 使用惰性初始化，确保首次渲染就有正确值（避免独立编辑器初始为空）

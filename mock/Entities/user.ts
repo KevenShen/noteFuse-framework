@@ -34,7 +34,7 @@ const USER_INIT_QUEUE_CONFIG: QueueConfig = {
 };
 
 /**
- * 布隆过滤器重建队列配置（独立队列，避免与 initUserData 冲突）
+ * 布隆过滤器重建队列配置（独立队列，避免与 syncUserToRedisAndMongo 冲突）
  * 使用通用 QueueConfig 类型
  */
 const BLOOM_REBUILD_QUEUE_CONFIG: QueueConfig = {
@@ -79,13 +79,16 @@ const userInitRabbitmq = createRabbitMQInstance({
 
 /** 用户编辑器设置（扁平化存储在用户对象中） */
 export interface MockEditorSettings {
+  /** 默认编辑器类型：vditor（经典）/ mdxeditor（现代）/ monaco（代码） */
   editor: 'vditor' | 'mdxeditor' | 'monaco';
+  /** 是否自动保存 */
   autosave: boolean;
+  /** 是否实时预览 */
   livepreview: boolean;
 }
 
-/** 用户表结构 */
-export interface MockUser {
+/** 用户表结构（继承编辑器设置，扁平化存储） */
+export interface MockUser extends MockEditorSettings {
   /** 用户ID（主键，自增） */
   id: number;
   /** 用户名（唯一，用于登录） */
@@ -108,10 +111,6 @@ export interface MockUser {
   created_at: string;
   /** 最后登录时间 */
   last_login?: string;
-  // 编辑器设置（扁平化内嵌）
-  editor: 'vditor' | 'mdxeditor' | 'monaco';
-  autosave: boolean;
-  livepreview: boolean;
 }
 
 // ==================== 2. 初始数据 ====================
@@ -191,6 +190,15 @@ export const userTable: MockTable<MockUser> = createTable<MockUser>({
   name: 'users',
   initialData: users,
   autoIncrementField: 'id',
+
+  // 异步模式：所有方法返回 Promise，可直接 await
+  async: true,
+  asyncConfig: {
+    delayEnabled: true,
+    minDelay: 2,
+    maxDelay: 8,
+    delayMode: 'random',
+  },
 
   timestamps: {
     enabled: false,
@@ -295,23 +303,23 @@ export const userTable: MockTable<MockUser> = createTable<MockUser>({
  * 2. idx_email (UNIQUE) - 注册/找回密码
  * 3. idx_status_created (复合) - 状态筛选+时间范围查询（覆盖status单列查询）
  */
-function initUserTableIndexes(): void {
+async function initUserTableIndexes(): Promise<void> {
   // 用户名唯一索引（登录高频查询）
-  userTable.createIndex(['username'], {
+  await userTable.createIndex(['username'], {
     name: 'idx_username',
     type: 'UNIQUE',
     comment: '用户名唯一索引，用于登录查询',
   });
 
   // 邮箱唯一索引（注册/找回密码）
-  userTable.createIndex(['email'], {
+  await userTable.createIndex(['email'], {
     name: 'idx_email',
     type: 'UNIQUE',
     comment: '邮箱唯一索引，用于注册和找回密码',
   });
 
   // 状态+创建时间复合索引（覆盖status单列查询和时间范围查询）
-  userTable.createIndex(['status', 'created_at'], {
+  await userTable.createIndex(['status', 'created_at'], {
     name: 'idx_status_created',
     type: 'NORMAL',
     comment: '状态+创建时间复合索引',
@@ -586,26 +594,6 @@ async function bloomFilterHandler(message: UserBatchMessage): Promise<void> {
 }
 
 /**
- * 处理器 2：MongoDB 批量写入
- *
- * 【职责】
- * 将每批用户数据批量写入 MongoDB。
- * 第一批需要先清空集合（冷启动重建）。
- */
-async function mongoDBHandler(message: UserBatchMessage): Promise<void> {
-  // 第一批清空集合（冷启动重建）
-  if (message.batchIndex === 1) {
-    await userMongoCollection.deleteMany({});
-    console.log('[MongoDBHandler] 已清空 MongoDB 集合');
-  }
-
-  // 批量插入用户数据
-  if (message.data.length > 0) {
-    await userMongoCollection.insertMany(message.data as any[]);
-  }
-}
-
-/**
  * 创建临时布隆过滤器处理器（双缓冲区重建用）
  *
  * 【职责】
@@ -659,57 +647,54 @@ function createTmpBloomFilterHandler(
 // 【数据流向】MockTable（L1）→ MongoDB（L2）→ Redis（L3）
 
 /**
- * 全局冷启动初始化（RabbitMQ 生产者-消费者模式）
+ * 同步用户数据到 Redis（布隆过滤器）和 MongoDB
  *
- * 【架构说明】
- * 采用生产者-消费者模式，避免全量数据收集到内存：
- * 1. 生产者（fetchAllWithCursorAndPublish）：分批从 DB 获取数据，publish 到队列
- * 2. 消费者（consumeBatch 通用函数）：从队列获取数据，实时处理
- *    - 布隆过滤器处理器：全量用户 username/email
- *    - MongoDB 处理器：全量用户数据
+ * 【设计说明】
+ * - 直接使用静态 users 数组，避免 userTable 未初始化时的数据冲突
+ * - 初始部署数据量小，直接分批遍历处理即可，无需 RabbitMQ 生产者-消费者模式
+ * - 分批处理（每批 500 条），避免单次处理过多数据
+ *
+ * 【处理内容】
+ * - 布隆过滤器：全量用户 username/email 添加到 Redis Bloom Filter
  *
  * 【注意】
- * - 用户详情缓存（user:info:）不在初始化时预填充，由 service 层按需缓存
- *
- * 【优势】
- * - 内存占用极低：每批处理完就释放
- * - 生产者-消费者并行
- * - 职责分离：数据获取与数据处理解耦
+ * - MongoDB 数据已在 userMongoCollection 初始化时通过 initialData 插入，无需重复同步
+ * - 用户详情缓存（user:info:）不在此预填充，由 service 层按需缓存
+ * - 此函数在文件底部自调用，不参与 init.ts 的自动扫描
  *
  * @returns Promise<void>
  */
-export async function initUserData(): Promise<void> {
+export async function syncUserToRedisAndMongo(): Promise<void> {
   const startTime = Date.now();
+  const BATCH_SIZE = 500;
+  const totalBatches = Math.ceil(users.length / BATCH_SIZE);
   console.log(
-    '[UserData] 🚀 开始全局冷启动初始化（RabbitMQ 生产者-消费者模式）...',
+    `[UserData] 🚀 开始全局冷启动初始化（共 ${users.length} 个用户，分 ${totalBatches} 批）...`,
   );
 
-  // ========== 阶段 1：生产者 - 分批获取数据并发布到队列 ==========
-  console.log('[UserData] 阶段 1：生产者开始分批获取数据并发布...');
-  await fetchAllWithCursorAndPublish<MockUser>(
-    userTable,
-    500,
-    'id',
-    USER_INIT_QUEUE_CONFIG,
-    userInitRabbitmq,
-  );
+  // 直接使用静态 users 数组，避免 userTable 未初始化时的数据冲突
+  // 初始部署数据量小，直接分批遍历处理即可
+  for (let i = 0; i < users.length; i += BATCH_SIZE) {
+    const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
+    const batchData = users.slice(i, i + BATCH_SIZE);
+    const message: UserBatchMessage = {
+      batchIndex,
+      totalBatches,
+      data: batchData,
+      isLast: batchIndex === totalBatches,
+      totalCount: users.length,
+    };
 
-  // ========== 阶段 2：消费者 - 从队列获取数据并实时处理 ==========
-  console.log('[UserData] 阶段 2：消费者开始处理队列消息...');
-  await consumeBatch<MockUser>(
-    [
-      bloomFilterHandler, // 处理器 1：布隆过滤器初始化
-      mongoDBHandler, // 处理器 2：MongoDB 批量写入
-    ],
-    USER_INIT_QUEUE_CONFIG,
-    userInitRabbitmq,
-  );
+    // 只同步布隆过滤器到 Redis
+    // MongoDB 数据已在 userMongoCollection 初始化时通过 initialData 插入，无需重复同步
+    await bloomFilterHandler(message);
+  }
 
   // ========== 性能统计 ==========
   const duration = Date.now() - startTime;
   console.log(
-    `[UserData] ✅ 全局冷启动初始化完成（RabbitMQ 模式）：` +
-      `耗时 ${duration}ms`,
+    `[UserData] ✅ 全局冷启动初始化完成：` +
+      `${users.length} 个用户，分 ${totalBatches} 批，耗时 ${duration}ms`,
   );
 }
 
@@ -717,13 +702,13 @@ export async function initUserData(): Promise<void> {
  * 定期全量重建用户布隆过滤器（异步 + RabbitMQ 生产者-消费者模式）
  *
  * 【设计说明】
- * 采用与 initUserData 一致的 RabbitMQ 生产者-消费者架构：
+ * 采用与 syncUserToRedisAndMongo 一致的 RabbitMQ 生产者-消费者架构：
  * 1. 生产者：fetchAllWithCursorAndPublish 分批从 DB 获取数据，publish 到独立队列
  * 2. 消费者：只注册 tmpBloomFilterHandler，写入临时布隆过滤器
  * 3. 完成后通过 rename 原子性切换（双缓冲区，零空窗期）
  *
- * 【与 initUserData 的区别】
- * - initUserData：同时重建布隆过滤器 + MongoDB
+ * 【与 syncUserToRedisAndMongo 的区别】
+ * - syncUserToRedisAndMongo：同时重建布隆过滤器 + MongoDB
  * - rebuildUserBloomFilters：只重建布隆过滤器，不影响 MongoDB
  *
  * 【双缓冲区方案】
@@ -769,7 +754,7 @@ export async function rebuildUserBloomFilters(
     );
 
     // ========== 阶段 2：生产者-消费者模式写入临时布隆过滤器 ==========
-    // 使用独立队列 BLOOM_REBUILD_QUEUE_CONFIG，避免与 initUserData 冲突
+    // 使用独立队列 BLOOM_REBUILD_QUEUE_CONFIG，避免与 syncUserToRedisAndMongo 冲突
     // 【优化】通用函数内部已计算总数和批次数，返回统计信息，避免重复查询数据库
 
     // 2.1 生产者：分批从 DB 获取数据并发布到队列（使用通用函数）
@@ -875,5 +860,5 @@ export async function rebuildUserBloomFilters(
 }
 
 // 模块加载时自动执行全局冷启动初始化
-initUserData();
+syncUserToRedisAndMongo();
 // #endregion 冷启动初始化与工具函数

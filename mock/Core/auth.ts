@@ -8,7 +8,7 @@ import type { Request } from 'express';
 import {
   tokenCache,
   userCache,
-  userTable,
+  userMongoCollection,
   type MockUser,
 } from '../Entities/user';
 import { generateUUID } from './crypto';
@@ -27,30 +27,20 @@ export const generateToken = (userId: number): string => {
 };
 /**
  * 从请求中获取 Token
- * 优先从 Authorization header 获取（支持 Token 和 Bearer 两种格式），其次从 query 参数获取
+ * 仅从 Authorization header 获取（支持 Token 和 Bearer 两种格式）
+ * 出于安全考虑，不支持从 query 参数或 body 获取 token
  */
 export const getTokenFromRequest = (req: Request): string | null => {
-  // 从 Authorization header 获取
   const authHeader = req.headers.authorization;
-  if (authHeader) {
-    // 支持 "Token xxx" 格式（项目使用的格式）
-    if (authHeader.startsWith('Token ')) {
-      return authHeader.slice(6);
-    }
-    // 兼容 "Bearer xxx" 格式
-    if (authHeader.startsWith('Bearer ')) {
-      return authHeader.slice(7);
-    }
-  }
+  if (!authHeader) return null;
 
-  // 从 query 参数获取
-  if (req.query && typeof req.query.token === 'string') {
-    return req.query.token;
+  // 支持 "Token xxx" 格式（项目使用的格式）
+  if (authHeader.startsWith('Token ')) {
+    return authHeader.slice(6);
   }
-
-  // 从 body 获取
-  if (req.body && typeof req.body.token === 'string') {
-    return req.body.token;
+  // 兼容 "Bearer xxx" 格式
+  if (authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7);
   }
 
   return null;
@@ -61,7 +51,9 @@ export const getTokenFromRequest = (req: Request): string | null => {
  * @param req Express 请求对象
  * @returns 用户对象（未登录返回 null）
  */
-export const getCurrentUserFromToken = (req: Request): MockUser | null => {
+export const getCurrentUserFromToken = async (
+  req: Request,
+): Promise<MockUser | null> => {
   const token = getTokenFromRequest(req);
   if (!token) return null;
 
@@ -76,12 +68,12 @@ export const getCurrentUserFromToken = (req: Request): MockUser | null => {
     return sanitizeUser(cachedUser);
   }
 
-  // 缓存未命中，从数据库查询（使用 Entities/user.ts 导出的 userTable，保证数据一致）
-  const user = userTable.findById(userId);
+  // 缓存未命中，从 MongoDB 查询（L2 文档数据库）
+  const user = await userMongoCollection.findOne({ id: userId });
   if (!user) return null;
 
-  // 写入缓存
-  userCache.set(cacheKey, user);
+  // 写入缓存（只存储脱敏后的用户信息，不包含密码，提升安全性）
+  userCache.set(cacheKey, sanitizeUser(user));
 
   return sanitizeUser(user);
 };

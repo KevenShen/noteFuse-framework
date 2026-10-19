@@ -113,7 +113,8 @@ export class RedisPipeline {
   }
 
   /** 哈希操作 */
-  hset(key: string, field: string, value: any): this {
+  /** 设置哈希字段（支持单字段和多字段对象两种方式） */
+  hset(key: string, field: string | Record<string, any>, value?: any): this {
     this.commands.push({ command: 'hset', args: [key, field, value] });
     return this;
   }

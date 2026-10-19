@@ -51,10 +51,10 @@ import * as quickService from './service';
  * 【注意】
  * 这里使用 require 动态导入，避免循环依赖问题
  */
-const getUserId = (req: Request): number => {
+const getUserId = async (req: Request): Promise<number> => {
   try {
-    const { getCurrentUserFromToken } = require('../User/service');
-    const user = getCurrentUserFromToken(req);
+    const { getCurrentUserFromToken } = require('../../Core/auth');
+    const user = await getCurrentUserFromToken(req);
     return user?.id || 1;
   } catch (error) {
     return 1;
@@ -76,7 +76,7 @@ class QuickController {
    */
   async getQuickGroups(req: Request, res: Response): Promise<void> {
     await delay(200);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     await handleService<GetQuickGroupsResponse>(res, () =>
       quickService.getQuickGroups(userId),
     );
@@ -88,7 +88,7 @@ class QuickController {
    */
   async createQuickGroup(req: Request, res: Response): Promise<void> {
     await delay(300);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = req.body as CreateQuickGroupRequest;
     await handleService<CreateQuickGroupResponse>(
       res,
@@ -109,7 +109,6 @@ class QuickController {
       res,
       () => quickService.updateQuickGroup(groupId, data),
       '分组已更新',
-      404,
     );
   }
 
@@ -124,7 +123,6 @@ class QuickController {
       res,
       () => quickService.deleteQuickGroup(groupId),
       '分组已删除',
-      404,
     );
   }
 
@@ -150,7 +148,7 @@ class QuickController {
    */
   async getQuickItems(req: Request, res: Response): Promise<void> {
     await delay(200);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = {
       category_id: req.query.category_id as number | string | undefined,
       type: req.query.type as QuickItemType | undefined,
@@ -166,7 +164,7 @@ class QuickController {
    */
   async createQuickItem(req: Request, res: Response): Promise<void> {
     await delay(300);
-    const userId = getUserId(req);
+    const userId = await getUserId(req);
     const data = req.body as CreateQuickItemRequest;
     await handleService<CreateQuickItemResponse>(
       res,
@@ -187,7 +185,6 @@ class QuickController {
       res,
       () => quickService.updateQuickItem(itemId, data),
       '操作项已更新',
-      404,
     );
   }
 
@@ -202,7 +199,6 @@ class QuickController {
       res,
       () => quickService.deleteQuickItem(itemId),
       '操作项已删除',
-      404,
     );
   }
 
@@ -217,7 +213,6 @@ class QuickController {
       res,
       () => quickService.incrementUsage(itemId),
       '使用次数已增加',
-      404,
     );
   }
 
@@ -235,7 +230,6 @@ class QuickController {
       res,
       () => quickService.addItemToGroup(groupId, data),
       '已添加到分组',
-      404,
     );
   }
 
@@ -251,7 +245,6 @@ class QuickController {
       res,
       () => quickService.removeItemFromGroup(groupId, itemId),
       '已从分组移除',
-      404,
     );
   }
 }

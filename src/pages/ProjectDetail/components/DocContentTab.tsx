@@ -34,7 +34,7 @@ const DocContentTab: React.FC<DocContentTabProps> = ({ doc, loading }) => {
     );
   }
 
-  const currentVersion = doc.versions?.find((v) => v.is_current) || doc.versions?.[0];
+  const currentVersion = doc.versions?.find((v) => v.id === doc.current_version_id) || doc.versions?.[0];
 
   return (
     <div className="doc-content-tab">
@@ -69,11 +69,11 @@ const DocContentTab: React.FC<DocContentTabProps> = ({ doc, loading }) => {
           {doc.versions.map((v) => (
             <Tag
               key={v.id}
-              color={v.is_current ? 'blue' : 'default'}
+              color={v.id === doc.current_version_id ? 'blue' : 'default'}
               style={{ cursor: 'default' }}
             >
               {v.version}
-              {v.is_current && '（当前）'}
+              {v.id === doc.current_version_id && '（当前）'}
             </Tag>
           ))}
         </div>

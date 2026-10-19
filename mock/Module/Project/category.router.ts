@@ -10,6 +10,7 @@ import {
   validateBatchDeleteCategoriesRequest,
   validateBatchMoveCategoriesRequest,
   validateCreateCategoryRequest,
+  validateDeleteCategoryRequest,
   validateGetCategoryListRequest,
   validateSaveCategorySortRequest,
   validateUpdateCategoryRequest,
@@ -20,16 +21,15 @@ import {
 export default {
   // ---------- 分类列表 ----------
 
-  /** 获取分类列表（含后代文档数汇总）
+  /** 获取分类列表（统一带统计字段：project_count + project_ids）
    * 中间件：无（公开接口），参数校验（query）
    */
   'GET /api/project/categories': withMiddleware(
     {
       validate: validateGetCategoryListRequest,
-      validateSource: 'query',
     },
     (req: Request, res: Response) =>
-      categoryController.getCategoryListWithProjectCount(req, res),
+      categoryController.getCategoryList(req, res),
   ),
 
   // ---------- 创建分类 ----------
@@ -43,7 +43,7 @@ export default {
       validate: validateCreateCategoryRequest,
     },
     (req: Request, res: Response) =>
-      categoryController.createCategoryAdvanced(req, res),
+      categoryController.createCategory(req, res),
   ),
 
   // ---------- 更新分类 ----------
@@ -63,14 +63,15 @@ export default {
   // ---------- 删除分类 ----------
 
   /** 删除分类（含校验：存在子分类或文集时禁止删除）
-   * 中间件：认证（ID 在 params 中，无需 body 校验）
+   * 中间件：认证 + 参数校验（自动合并 body 和 params）
    */
   'DELETE /api/project/category/:id': withMiddleware(
     {
       auth: true,
+      validate: validateDeleteCategoryRequest,
     },
     (req: Request, res: Response) =>
-      categoryController.deleteCategoryWithCheck(req, res),
+      categoryController.deleteCategory(req, res),
   ),
 
   // ---------- 批量操作 ----------

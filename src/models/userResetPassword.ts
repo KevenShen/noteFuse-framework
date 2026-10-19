@@ -38,8 +38,8 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(sendResetCode, payload.email);
-        if (!res.success) {
-          message.error(res.message || '发送失败');
+        if (!res?.success) {
+          message.error(res?.message || '发送失败');
           return null;
         }
         message.success('验证码已发送，请查收邮件');
@@ -64,8 +64,8 @@ export default {
       yield put({ type: 'setLoading', payload: true });
       try {
         const res = yield call(resetPassword, payload);
-        if (!res.success) {
-          message.error(res.message || '重置失败');
+        if (!res?.success) {
+          message.error(res?.message || '重置失败');
           return null;
         }
         message.success('密码重置成功，请使用新密码登录');

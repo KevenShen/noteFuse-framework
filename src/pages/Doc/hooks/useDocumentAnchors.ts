@@ -50,7 +50,7 @@ export function useDocumentAnchors(
       return docVersions.find((v: any) => v.id === Number(versionId)) || null;
     }
     return (
-      docVersions.find((v: any) => v.doc_id === docId && v.is_current) || null
+      docVersions.find((v: any) => v.doc_id === docId && v.id === currentDoc?.current_version_id) || null
     );
   }, [docVersions, docId, versionId]);
 

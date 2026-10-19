@@ -4,14 +4,14 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { fail } from '../../Core';
-import { getCurrentUserFromToken } from '../User/service';
+import { getCurrentUserFromToken } from '../../Core/auth';
 import { validateMiddleware, logMiddleware, compose, type Middleware, type RequestHandler } from '../../Core/middleware';
 
 /**
  * 认证中间件
  */
-export const authMiddleware: Middleware = (req, res, next) => {
-  const user = getCurrentUserFromToken(req);
+export const authMiddleware: Middleware = async (req, res, next) => {
+  const user = await getCurrentUserFromToken(req);
   if (!user) {
     res.status(401).json(fail('未登录或登录已过期', 401));
     return;

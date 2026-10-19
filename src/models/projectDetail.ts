@@ -65,6 +65,10 @@ export default {
         const res = yield call(projectDetailService.getProjectDetail, {
           id: payload,
         });
+        if (!res?.success) {
+          message.error(res?.message || '加载文集详情失败');
+          return null;
+        }
         yield put({ type: 'saveCurrentProject', payload: res.data });
         return res.data;
       } catch (e) {
@@ -85,6 +89,10 @@ export default {
       yield put({ type: 'setIntroSaving', payload: true });
       try {
         const res = yield call(projectDetailService.updateProjectIntro, payload);
+        if (!res?.success) {
+          message.error(res?.message || '保存失败');
+          return null;
+        }
         yield put({ type: 'saveCurrentProject', payload: res.data });
         message.success('简介已保存');
         return res;

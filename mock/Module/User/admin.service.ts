@@ -117,7 +117,7 @@ class AdminService {
 
       // ========== 降级到 MockTable（L1）==========
       if (!useMongo) {
-        filtered = userTable.findAll();
+        filtered = await userTable.findAll();
 
         if (keyword) {
           const kw = keyword.toLowerCase();
@@ -192,7 +192,7 @@ class AdminService {
     // 3. 创建新用户（同时写入 L1 MockTable 和 L2 MongoDB）
     // 【安全】密码使用 AES-256-GCM 加密后存储，不保存明文
     const encryptedPassword = encryptPassword(data.password);
-    const newUser = userTable.create({
+    const newUser = await userTable.create({
       username: data.username,
       password: encryptedPassword,
       nickname: data.nickname || data.username,
@@ -230,7 +230,7 @@ class AdminService {
     userId: number,
     data: AdminUpdateUserRequest,
   ): Promise<Omit<MockUser, 'password'>> {
-    const user = userTable.findById(userId);
+    const user = await userTable.findById(userId);
 
     if (!user) {
       throw new BusinessError('用户不存在', 404);
@@ -258,15 +258,14 @@ class AdminService {
     if (data.status !== undefined) updateData.status = data.status;
     if (data.avatar !== undefined) updateData.avatar = data.avatar;
 
-    const updatedUser = userTable.updateById(userId, updateData);
-
-    // 同步更新 MongoDB L2（保持数据一致）
-    if (Object.keys(updateData).length > 0) {
-      await userMongoCollection.updateOne(
+    const [updatedUser] = await Promise.all([
+      userTable.updateById(userId, updateData),
+      // 同步更新 MongoDB L2（保持数据一致）
+      userMongoCollection.updateOne(
         { id: userId },
         { $set: updateData },
-      );
-    }
+      ),
+    ]);
 
     // 清除相关缓存
     clearUserCache(userId);
@@ -286,14 +285,16 @@ class AdminService {
       throw new BusinessError('不能删除自己');
     }
 
-    const user = userTable.findById(userId);
+    const user = await userTable.findById(userId);
     if (!user) {
       throw new BusinessError('用户不存在', 404);
     }
 
     // 删除用户（同时删除 L1 MockTable 和 L2 MongoDB）
-    userTable.deleteById(userId);
-    await userMongoCollection.deleteOne({ id: userId });
+    await Promise.all([
+      userTable.deleteById(userId),
+      userMongoCollection.deleteOne({ id: userId }),
+    ]);
 
     // 清除相关缓存
     clearUserCache(userId);

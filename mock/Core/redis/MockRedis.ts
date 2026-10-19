@@ -139,7 +139,8 @@ export interface MockRedis {
   decrBy(key: string, decrement: number): number;
 
   // ==================== 哈希操作 ====================
-  hset(key: string, field: string, value: any): number;
+  /** 设置哈希字段（支持单字段和多字段对象两种方式） */
+  hset(key: string, field: string | Record<string, any>, value?: any): number;
   hget(key: string, field: string): any | null;
   hgetAll(key: string): Record<string, any> | null;
   hdel(key: string, field: string): number;

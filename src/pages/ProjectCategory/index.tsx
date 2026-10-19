@@ -14,7 +14,7 @@ import {
   useShallowSelector,
 } from '@/hooks';
 import { getCategoryList } from '@/services';
-import { extractResponseData } from '@/utils/clientLoader';
+import { extractListWithPagination } from '@/utils/clientLoader';
 import { useClientLoaderData, useDispatch } from '@umijs/max';
 import { Typography } from 'antd';
 import { useCallback } from 'react';
@@ -72,13 +72,10 @@ const categoryExtraFields: ExtraFieldConfig[] = [
 export async function clientLoader() {
   try {
     const categoriesRes = await getCategoryList();
-    console.log('clientLoader categoriesRes', categoriesRes);
 
-    // 使用统一的工具函数提取数据
-    const categoriesData = extractResponseData<any>(categoriesRes, []);
-    const projectCategoryList = Array.isArray(categoriesData)
-      ? categoriesData
-      : categoriesData.list || [];
+    // 使用统一的工具函数提取数据（兼容直接数组与 { list } 两种结构）
+    const { list: projectCategoryList } =
+      extractListWithPagination<any>(categoriesRes);
 
     return {
       projectCategoryList,
@@ -149,14 +146,21 @@ const ProjectCategoryPage = () => {
 
   const onDelete = useCallback(
     (record: CategoryItem) => {
-      dispatch({ type: 'projectCategory/handleDeleteCategory', payload: record.id });
+      dispatch({
+        type: 'projectCategory/handleDeleteCategory',
+        payload: Number(record.id),
+      });
     },
     [dispatch],
   );
 
   const onBatchDelete = useCallback(
     (keys: (number | string)[]) => {
-      dispatch({ type: 'projectCategory/handleBatchDeleteCategories', payload: keys });
+      dispatch({
+        type: 'projectCategory/handleBatchDeleteCategories',
+        // antd Table 选中的 key 可能为 string，后端要求 number[]
+        payload: keys.map(Number),
+      });
     },
     [dispatch],
   );
@@ -165,7 +169,10 @@ const ProjectCategoryPage = () => {
     (keys: (number | string)[], targetParentId: number | string) => {
       dispatch({
         type: 'projectCategory/handleBatchMoveCategories',
-        payload: { ids: keys, target_parent_id: targetParentId },
+        payload: {
+          ids: keys.map(Number),
+          target_parent_id: Number(targetParentId),
+        },
       });
     },
     [dispatch],
@@ -173,7 +180,10 @@ const ProjectCategoryPage = () => {
 
   const onSaveSort = useCallback(
     (sortedList: CategoryItem[]) => {
-      dispatch({ type: 'projectCategory/handleSaveCategorySort', payload: sortedList });
+      dispatch({
+        type: 'projectCategory/handleSaveCategorySort',
+        payload: sortedList,
+      });
     },
     [dispatch],
   );
@@ -189,15 +199,15 @@ const ProjectCategoryPage = () => {
         <CategoryManager
           dataSource={projectCategoryList}
           loading={loading}
+          nameColumnTitle="分类名称"
+          statField="project_count"
+          statColumnTitle="文集数"
+          modalTitle="文集分类"
           maxLevel={3}
           sortable
           selectable
           extraFields={categoryExtraFields}
           columnDisplay={{ sort: true, stat: true }}
-          nameColumnTitle="分类名称"
-          statField="project_count"
-          statColumnTitle="文集数"
-          modalTitle="文集分类"
           onAdd={onAdd}
           onEdit={onEdit}
           onDelete={onDelete}

@@ -45,7 +45,6 @@ export interface TagDocVersion {
   id: number | string;
   doc_id: number | string;
   version: string;
-  is_current?: boolean;
   author_name?: string;
   update_time?: number | string;
   status?: string;
