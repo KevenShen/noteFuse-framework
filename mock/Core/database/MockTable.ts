@@ -93,72 +93,77 @@ import {
   WithBackup,
   WithWrite,
   WithUtility,
+  WithAssociation,
 } from './mixins';
 
 /**
  * 组合所有 Mixin 后的基类
  * 运行时实际包含所有 31 个 Mixin 的方法
  */
-const ComposedMockTable = WithUtility(
-  WithWrite(
-    WithBackup(
-      WithReplication(
-        WithBinlog(
-          WithImportExport(
-            WithPerformance(
-              WithJson(
-                WithEventHook(
-                  WithValidation(
-                    WithForeignKey(
-                      WithFulltext(
-                        WithCte(
-                          WithWindowFunction(
-                            WithTree(
-                              WithTimestamp(
-                                WithSoftDelete(
-                                  WithCaseWhen(
-                                    WithBulk(
-                                      WithUpsert(
-                                        WithSubquery(
-                                          WithUnion(
-                                            WithJoin(
-                                              WithQueryCache(
-                                                WithExplain(
-                                                  WithIndex(
-                                                    WithLock(
-                                                      WithTransaction(
-                                                        WithCursorPagination(
-                                                          WithAggregation(
-                                                            WithQuery(MockTableBase)
-                                                          )
-                                                        )
-                                                      )
-                                                    )
-                                                  )
-                                                )
-                                              )
-                                            )
-                                          )
-                                        )
-                                      )
-                                    )
-                                  )
-                                )
-                              )
-                            )
-                          )
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  )
+const ComposedMockTable = WithAssociation(
+  WithUtility(
+    WithWrite(
+      WithBackup(
+        WithReplication(
+          WithBinlog(
+            WithImportExport(
+              WithPerformance(
+                WithJson(
+                  WithEventHook(
+                    WithValidation(
+                      WithForeignKey(
+                        WithFulltext(
+                          WithCte(
+                            WithWindowFunction(
+                              WithTree(
+                                WithTimestamp(
+                                  WithSoftDelete(
+                                    WithCaseWhen(
+                                      WithBulk(
+                                        WithUpsert(
+                                          WithSubquery(
+                                            WithUnion(
+                                              WithJoin(
+                                                WithQueryCache(
+                                                  WithExplain(
+                                                    WithIndex(
+                                                      WithLock(
+                                                        WithTransaction(
+                                                          WithCursorPagination(
+                                                            WithAggregation(
+                                                              WithQuery(
+                                                                MockTableBase,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
 ) as any;
 
 /**

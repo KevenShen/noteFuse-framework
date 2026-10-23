@@ -4,24 +4,27 @@
 
 import { BusinessError } from '../../Core';
 import { sanitizeUser } from '../../Core/auth';
+import {
+  encryptPassword,
+  findByIdFromMongoOrDb,
+  findFromMongoOrDb,
+  invalidateCacheAll,
+} from '../../Core/utils';
 import type { MockUser } from '../../Entities/user';
 import {
-  addEmailToBloom,
-  addUsernameToBloom,
   defaultEditorSettings,
-  emailMayExist,
+  emailBloomFilter,
   userListCache,
   userMongoCollection,
   userTable,
-  usernameMayExist,
+  usernameBloomFilter,
 } from '../../Entities/user';
 import type {
   AdminCreateUserRequest,
   AdminGetUserListRequest,
   AdminUpdateUserRequest,
 } from './admin.dto';
-import { clearUserCache, findUserFromMongoOrDb, findUserByIdFromMongoOrDb } from './user.service';
-import { encryptPassword } from '../../Core/crypto';
+import { userRepository } from './user.repository';
 
 // ==================== 管理员用户服务类 ====================
 
@@ -37,7 +40,7 @@ class AdminService {
    */
   async checkAdminPermission(userId: number): Promise<void> {
     // 查询优先从 MongoDB L2，降级到 MockTable L1
-    const user = await findUserByIdFromMongoOrDb(userId);
+    const user = await findByIdFromMongoOrDb(userMongoCollection, userTable, userId, 'AdminService');
     if (!user) {
       throw new BusinessError('用户不存在', 401);
     }
@@ -52,7 +55,7 @@ class AdminService {
    */
   async checkSuperAdminPermission(userId: number): Promise<void> {
     // 查询优先从 MongoDB L2，降级到 MockTable L1
-    const user = await findUserByIdFromMongoOrDb(userId);
+    const user = await findByIdFromMongoOrDb(userMongoCollection, userTable, userId, 'AdminService');
     if (!user) {
       throw new BusinessError('用户不存在', 401);
     }
@@ -156,7 +159,7 @@ class AdminService {
    */
   async getAdminUserDetail(userId: number): Promise<Omit<MockUser, 'password'>> {
     // 查询优先从 MongoDB L2，降级到 MockTable L1
-    const user = await findUserByIdFromMongoOrDb(userId);
+    const user = await findByIdFromMongoOrDb(userMongoCollection, userTable, userId, 'AdminService');
 
     if (!user) {
       throw new BusinessError('用户不存在', 404);
@@ -172,18 +175,18 @@ class AdminService {
    */
   async adminCreateUser(data: AdminCreateUserRequest): Promise<Omit<MockUser, 'password'>> {
     // 1. 检查用户名是否已存在（布隆过滤器优化 + MongoDB 优先查询）
-    if (usernameMayExist(data.username)) {
+    if (usernameBloomFilter.mayExist(data.username)) {
       // 优先从 MongoDB L2 查询，降级到 MockTable L1
-      const existUser = await findUserFromMongoOrDb({ username: data.username });
+      const existUser = await findFromMongoOrDb(userMongoCollection, userTable, { username: data.username }, 'AdminService');
       if (existUser) {
         throw new BusinessError('用户名已存在');
       }
     }
 
     // 2. 检查邮箱是否已存在（布隆过滤器优化 + MongoDB 优先查询）
-    if (emailMayExist(data.email)) {
+    if (emailBloomFilter.mayExist(data.email)) {
       // 优先从 MongoDB L2 查询，降级到 MockTable L1
-      const existUser = await findUserFromMongoOrDb({ email: data.email });
+      const existUser = await findFromMongoOrDb(userMongoCollection, userTable, { email: data.email }, 'AdminService');
       if (existUser) {
         throw new BusinessError('邮箱已存在');
       }
@@ -210,12 +213,12 @@ class AdminService {
     await userMongoCollection.insertOne(newUser);
 
     // 4. 将新用户的 username 和 email 添加到布隆过滤器
-    addUsernameToBloom(newUser.username);
-    addEmailToBloom(newUser.email);
+    usernameBloomFilter.add(newUser.username);
+    emailBloomFilter.add(newUser.email);
 
     // 5. 清除相关缓存
-    clearUserCache();
-    userListCache.invalidateAll();
+    await userRepository.clearUserCache();
+    invalidateCacheAll(userListCache);
 
     return sanitizeUser(newUser);
   }
@@ -238,16 +241,16 @@ class AdminService {
 
     // 检查邮箱是否被其他用户使用（布隆过滤器优化 + MongoDB 优先查询）
     if (data.email !== undefined && data.email !== user.email) {
-      if (emailMayExist(data.email)) {
+      if (emailBloomFilter.mayExist(data.email)) {
         // 优先从 MongoDB L2 查询，降级到 MockTable L1
-        const existUser = await findUserFromMongoOrDb({ email: data.email });
+        const existUser = await findFromMongoOrDb(userMongoCollection, userTable, { email: data.email }, 'AdminService');
         if (existUser) {
           throw new BusinessError('邮箱已被使用');
         }
       }
       // 邮箱变更后，将新邮箱添加到布隆过滤器
       // 注意：布隆过滤器不支持删除，旧邮箱仍保留在过滤器中（不影响功能，只会导致多查一次数据库）
-      addEmailToBloom(data.email);
+      emailBloomFilter.add(data.email);
     }
 
     // 更新字段
@@ -268,8 +271,8 @@ class AdminService {
     ]);
 
     // 清除相关缓存
-    clearUserCache(userId);
-    userListCache.invalidateAll();
+    userRepository.clearUserCache(userId);
+    invalidateCacheAll(userListCache);
 
     return sanitizeUser(updatedUser!);
   }
@@ -297,8 +300,8 @@ class AdminService {
     ]);
 
     // 清除相关缓存
-    clearUserCache(userId);
-    userListCache.invalidateAll();
+    userRepository.clearUserCache(userId);
+    invalidateCacheAll(userListCache);
 
     return null;
   }

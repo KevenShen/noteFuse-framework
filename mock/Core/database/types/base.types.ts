@@ -95,6 +95,8 @@ export interface FindOptions<T> {
   limit?: number;
   /** 偏移量 */
   offset?: number;
+  /** 关联查询（Sequelize 风格 include） */
+  include?: any[];
 }
 
 /** 分页选项 */

@@ -2,7 +2,7 @@
 // 文档浏览历史服务层
 // 职责：处理文档浏览历史相关的业务逻辑
 
-import { docBrowseHistoryTable } from '../../Entities/doc';
+import { docBrowseRepository } from './docBrowse.repository';
 
 // ============================================================================
 // 文档浏览历史服务类
@@ -18,14 +18,14 @@ class DocBrowseService {
    * @param userId 用户 ID
    */
   async recordDocBrowse(docId: number, userId: number): Promise<void> {
-    await docBrowseHistoryTable.create({
+    await docBrowseRepository.create({
       doc_id: docId,
       user_id: Number(userId),
       browse_time: Date.now(),
       doc_name: '',
       project_id: 0,
       project_name: '',
-    } as any);
+    });
   }
 }
 

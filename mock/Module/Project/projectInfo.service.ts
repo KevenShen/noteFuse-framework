@@ -2,117 +2,12 @@
 // 文集详情页子资源服务层
 // 职责：处理文集详情页子资源相关的核心业务逻辑
 // 包含：文档分类、文档列表、文档版本、AI 大纲、文集简介等子资源接口
+// 数据访问通过 projectInfoRepository 封装
 
 import { BusinessError } from '../../Core';
-import { redis } from '../../Core/redis';
-import {
-  docCategoryTable,
-  docTable,
-  docVersionTable,
-} from '../../Entities/doc';
 import type { MockProject, MongoProject } from '../../Entities/project';
-import {
-  projectCache,
-  projectMongoCollection,
-  projectTable,
-} from '../../Entities/project';
-// 从文集体服务导入需要的辅助函数
-import { batchGetProjectInfo, invalidateProjectListCache } from './project.service';
-
-/**
- * AI 大纲内存存储
- * key: projectId, value: 大纲数据
- * （实际项目中应使用数据库存储，这里使用 Map 模拟）
- */
-const aiOutlineStore = new Map<number, any>();
-
-/**
- * 三级缓存降级获取文集信息
- *
- * 【读取优先级】
- * 1. Redis 缓存（L3）：project:info:{id}，TTL 5分钟
- * 2. MongoDB（L2）：projectMongoCollection
- * 3. 数据库（L1）：projectTable（兜底）
- *
- * 【缓存策略】
- * - Cache-Aside 模式，未命中时从下层获取并写入上层缓存
- * - 写入 Redis 时设置 5 分钟 TTL
- *
- * @param projectId 文集 ID
- * @returns 文集信息（不存在时返回 null）
- */
-async function getProjectWithFallback(projectId: number): Promise<MockProject | null> {
-  // ========== 1. 尝试从 Redis 缓存获取 ==========
-  try {
-    const cached = await redis.hgetAll(`project:info:${projectId}`);
-    if (cached && Object.keys(cached).length > 0) {
-      return {
-        id: Number(cached.id),
-        name: cached.name,
-        intro: cached.intro || '',
-        icon: cached.icon || 'FolderOutlined',
-        color: cached.color || '#1890ff',
-        project_category_id: Number(cached.project_category_id),
-        create_user_id: Number(cached.create_user_id),
-        role: Number(cached.role),
-        is_collaborator: cached.is_collaborator === '1',
-        is_top: cached.is_top === '1',
-        sort: Number(cached.sort),
-        create_time: Number(cached.create_time),
-        modify_time: Number(cached.modify_time),
-        doc_count: cached.doc_count !== undefined ? Number(cached.doc_count) : 0,
-      };
-    }
-  } catch (error) {
-    console.warn('[ProjectInfo] Redis 缓存读取失败，降级到 MongoDB:', error);
-  }
-
-  // ========== 2. 从 MongoDB 获取 ==========
-  try {
-    const mongoProject = await projectMongoCollection.findOne({ id: projectId });
-    if (mongoProject) {
-      // 写入 Redis 缓存（TTL 5 分钟）
-      try {
-        const pipeline = redis.pipeline();
-        pipeline.hmset(`project:info:${projectId}`, {
-          id: String(mongoProject.id),
-          name: mongoProject.name,
-          intro: mongoProject.intro || '',
-          icon: mongoProject.icon || 'FolderOutlined',
-          color: mongoProject.color || '#1890ff',
-          project_category_id: String(mongoProject.project_category_id),
-          create_user_id: String(mongoProject.create_user_id),
-          role: String(mongoProject.role),
-          is_collaborator: mongoProject.is_collaborator ? '1' : '0',
-          is_top: mongoProject.is_top ? '1' : '0',
-          sort: String(mongoProject.sort),
-          create_time: String(mongoProject.create_time),
-          modify_time: String(mongoProject.modify_time),
-          doc_count: String(mongoProject.doc_count ?? 0),
-        });
-        pipeline.expire(`project:info:${projectId}`, 300);
-        await pipeline.execAsync();
-      } catch (cacheError) {
-        console.warn('[ProjectInfo] 写入 Redis 缓存失败:', cacheError);
-      }
-      return mongoProject as MockProject;
-    }
-  } catch (error) {
-    console.warn('[ProjectInfo] MongoDB 读取失败，降级到数据库:', error);
-  }
-
-  // ========== 3. 降级到数据库（L1） ==========
-  try {
-    const dbProject = projectTable.findById(projectId);
-    if (dbProject) {
-      return dbProject;
-    }
-  } catch (error) {
-    console.warn('[ProjectInfo] 数据库读取失败:', error);
-  }
-
-  return null;
-}
+import { projectInfoRepository } from './projectInfo.repository';
+import { projectRepository } from './project.repository';
 
 // ============================================================================
 // 文集详情页子资源服务类
@@ -125,15 +20,13 @@ class ProjectInfoService {
    * 获取文集详情（多级缓存降级）
    *
    * 【读取优先级】Redis（L3）→ MongoDB（L2）→ 数据库（L1）
-   * 【缓存策略】Cache-Aside 模式，未命中时从下层获取并写入上层缓存
    * 【返回】完整的 MongoProject（含 doc_count/doc_category_count 统计字段）
    *
    * @param id 文集 ID
    * @returns 文集详情
    */
   async getProjectDetail(id: number): Promise<MongoProject> {
-    // 复用批量获取函数（传入单元素数组），自动实现 Redis → MongoDB → 数据库降级
-    const projects = await batchGetProjectInfo([id]);
+    const projects = await projectRepository.findByIds([id]);
     const project = projects[0];
     if (!project) {
       throw new BusinessError('文集不存在', 404);
@@ -146,22 +39,15 @@ class ProjectInfoService {
   /**
    * 获取文集下的文档分类列表
    *
-   * 【性能优化】
-   * - 使用三级缓存降级检查文集存在性：Redis → MongoDB → 数据库
-   * - 避免每次都直接查询数据库
-   *
    * @param projectId 文集 ID
    * @returns 文档分类列表（扁平化，按 sort 排序）
    */
   async getProjectCategories(projectId: number): Promise<any[]> {
-    const project = await getProjectWithFallback(projectId);
+    const project = await projectInfoRepository.findProject(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    const allCategories = await docCategoryTable.findAll();
-    return allCategories
-      .filter((c) => c.project_id === projectId)
-      .sort((a, b) => a.sort - b.sort);
+    return projectInfoRepository.findDocCategories(projectId);
   }
 
   // ==================== 文档列表 ====================
@@ -172,14 +58,11 @@ class ProjectInfoService {
    * @returns 文档列表（扁平化，按 sort 排序）
    */
   async getProjectDocs(projectId: number): Promise<any[]> {
-    const project = await projectTable.findById(projectId);
+    const project = await projectInfoRepository.findProject(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    const allDocs = await docTable.findAll();
-    return allDocs
-      .filter((d) => d.project_id === projectId)
-      .sort((a, b) => a.sort - b.sort);
+    return projectInfoRepository.findDocs(projectId);
   }
 
   // ==================== 文档版本 ====================
@@ -190,18 +73,11 @@ class ProjectInfoService {
    * @returns 文档版本列表（扁平化）
    */
   async getProjectDocVersions(projectId: number): Promise<any[]> {
-    const project = await projectTable.findById(projectId);
+    const project = await projectInfoRepository.findProject(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    // 获取该文集下所有文档的 ID
-    const allDocs = await docTable.findAll();
-    const docIds = allDocs
-      .filter((d) => d.project_id === projectId)
-      .map((d) => d.id);
-    // 返回这些文档的所有版本
-    const allVersions = await docVersionTable.findAll();
-    return allVersions.filter((v) => docIds.includes(v.doc_id));
+    return projectInfoRepository.findDocVersions(projectId);
   }
 
   // ==================== AI 总结大纲 ====================
@@ -212,17 +88,11 @@ class ProjectInfoService {
    * @returns AI 大纲数据（不存在时返回 null）
    */
   getAiOutline(projectId: number): any | null {
-    const project = projectTable.findById(projectId);
+    const project = projectInfoRepository.findProject(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    // 从内存存储中获取大纲
-    const outline = aiOutlineStore.get(projectId);
-    if (outline) {
-      return outline;
-    }
-    // 不存在时返回 null（前端会显示"生成大纲"按钮）
-    return null;
+    return projectInfoRepository.getAiOutline(projectId);
   }
 
   /**
@@ -231,25 +101,19 @@ class ProjectInfoService {
    * @returns 生成的 AI 大纲数据
    */
   async generateAiOutline(projectId: number): Promise<any> {
-    const project = await projectTable.findById(projectId);
+    const project = await projectInfoRepository.findProject(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    // 获取该文集下的文档列表
-    const allDocs = await docTable.findAll();
-    const docList = allDocs
-      .filter((d) => d.project_id === projectId)
-      .sort((a, b) => a.sort - b.sort);
 
+    // 获取该文集下的文档列表
+    const docList = await projectInfoRepository.findDocs(projectId);
     if (docList.length === 0) {
       throw new BusinessError('文集下暂无文档，无法生成大纲');
     }
 
     // 获取该文集下的文档分类
-    const allCategories = await docCategoryTable.findAll();
-    const categoryList = allCategories
-      .filter((c) => c.project_id === projectId)
-      .sort((a, b) => a.sort - b.sort);
+    const categoryList = await projectInfoRepository.findDocCategories(projectId);
 
     // 按文档分类组织章节
     const chapters: any[] = [];
@@ -302,7 +166,7 @@ class ProjectInfoService {
     };
 
     // 保存到内存存储
-    aiOutlineStore.set(projectId, outline);
+    projectInfoRepository.saveAiOutline(projectId, outline);
 
     return outline;
   }
@@ -315,11 +179,11 @@ class ProjectInfoService {
    * @returns 保存后的 AI 大纲数据
    */
   saveAiOutline(projectId: number, summary: string, chapters: any[]): any {
-    const project = projectTable.findById(projectId);
+    const project = projectInfoRepository.findProject(projectId);
     if (!project) {
       throw new BusinessError('文集不存在', 404);
     }
-    const existing = aiOutlineStore.get(projectId);
+    const existing = projectInfoRepository.getAiOutline(projectId);
     const outline = {
       project_id: projectId,
       summary,
@@ -329,8 +193,7 @@ class ProjectInfoService {
         new Date().toLocaleString('zh-CN', { hour12: false }),
       updated_at: new Date().toLocaleString('zh-CN', { hour12: false }),
     };
-    // 保存到内存存储
-    aiOutlineStore.set(projectId, outline);
+    projectInfoRepository.saveAiOutline(projectId, outline);
     return outline;
   }
 
@@ -343,25 +206,16 @@ class ProjectInfoService {
    * @returns 更新后的文集
    */
   async updateProjectIntro(id: number, intro: string): Promise<MockProject> {
-    const oldProject = await projectTable.findById(id);
+    const oldProject = await projectInfoRepository.findProject(id);
     if (!oldProject) {
       throw new BusinessError('文集不存在', 404);
     }
-    const updatedProject = await projectTable.updateById(id, { intro });
 
-    // 缓存和 MongoDB 同步更新（并行执行 + 错误兜底）
-    try {
-      await Promise.all([
-        // 1. 删除文集详情缓存（下次读取时重建）
-        projectCache.del(String(id)),
-        // 2. 更新 MongoDB 文集集合
-        projectMongoCollection.updateOne({ id }, { $set: { intro } }),
-      ]);
+    const updatedProject = await projectInfoRepository.updateIntro(id, intro);
 
-      // 3. 精确失效列表缓存（intro 变更不影响排序，只影响 all 筛选的展示）
-      await invalidateProjectListCache(updatedProject!, ['intro']);
-    } catch (error) {
-      console.warn('[ProjectCache] 更新文集简介缓存失败:', error);
+    // 精确失效列表缓存（intro 变更不影响排序，只影响 all 筛选的展示）
+    if (updatedProject) {
+      await projectRepository.invalidateListCache(updatedProject, ['intro']);
     }
 
     return updatedProject!;

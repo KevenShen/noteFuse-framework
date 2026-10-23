@@ -2,16 +2,12 @@
 // 认证相关核心逻辑
 // 职责：提供当前用户获取函数
 // 【核心层】避免循环依赖，将认证逻辑从 User/service 提取到 Core
-// 【重要】使用 Entities/user.ts 导出的 userTable/tokenCache/userCache，保证数据和前缀一致
+// 【数据访问】通过 user.repository.ts 统一访问存储层
 
 import type { Request } from 'express';
-import {
-  tokenCache,
-  userCache,
-  userMongoCollection,
-  type MockUser,
-} from '../Entities/user';
-import { generateUUID } from './crypto';
+import type { MockUser } from '../Entities/user';
+import { userRepository } from '../Module/User/user.repository';
+import { generateUUID } from './utils';
 
 // ==================== 认证工具函数 ====================
 
@@ -22,7 +18,8 @@ import { generateUUID } from './crypto';
  */
 export const generateToken = (userId: number): string => {
   const token = 'token_' + generateUUID();
-  tokenCache.set(token, userId);
+  // fire-and-forget：token 存储不阻塞 token 字符串返回
+  userRepository.setToken(token, userId).catch(() => {});
   return token;
 };
 /**
@@ -57,23 +54,22 @@ export const getCurrentUserFromToken = async (
   const token = getTokenFromRequest(req);
   if (!token) return null;
 
-  // 从 tokenCache 中获取用户 ID（和 service.ts 中的 generateToken 使用同一个缓存实例）
-  const userId = tokenCache.get<number>(token);
+  // 通过 Repository 从 tokenCache 中获取用户 ID
+  const userId = await userRepository.getUserIdByToken(token);
   if (!userId) return null;
 
-  // 从 userCache 中获取用户信息（缓存穿透防护）
-  const cacheKey = String(userId);
-  const cachedUser = userCache.get<MockUser>(cacheKey);
+  // 通过 Repository 从 userCache 中获取用户信息（缓存穿透防护）
+  const cachedUser = await userRepository.getUserCache(userId);
   if (cachedUser) {
     return sanitizeUser(cachedUser);
   }
 
-  // 缓存未命中，从 MongoDB 查询（L2 文档数据库）
-  const user = await userMongoCollection.findOne({ id: userId });
+  // 缓存未命中，通过 Repository 从 MongoDB 查询（L2 文档数据库）
+  const user = await userRepository.findByIdFromMongoOnly(userId);
   if (!user) return null;
 
   // 写入缓存（只存储脱敏后的用户信息，不包含密码，提升安全性）
-  userCache.set(cacheKey, sanitizeUser(user));
+  await userRepository.setUserCache(userId, sanitizeUser(user));
 
   return sanitizeUser(user);
 };

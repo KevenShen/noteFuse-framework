@@ -22,8 +22,8 @@
  * - resetPassword：加密新密码存储
  */
 
-import * as crypto from 'crypto';
 import { Buffer } from 'buffer';
+import * as crypto from 'crypto';
 
 /**
  * 加密密钥（256 位，32 字节）
@@ -200,7 +200,6 @@ export function isEncryptedPassword(str: string): boolean {
     parts[2].length > 0
   );
 }
-
 
 // ==================== UUID 生成 ====================
 

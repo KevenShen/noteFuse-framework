@@ -23,21 +23,6 @@
  */
 
 import { BusinessError } from '../../Core';
-import { docTable, docVersionTable } from '../../Entities/doc';
-import {
-  projectCategoryTable,
-  projectTable,
-} from '../../Entities/project';
-import {
-  collectGroupTable,
-  collectTable,
-  collectGroupInfoCache,
-  collectGroupListCache,
-  collectInfoCache,
-  collectListCache,
-  collectByTargetCache,
-  collectCountCache,
-} from '../../Entities/collect';
 import type {
   MockCollect,
   MockCollectGroup,
@@ -54,6 +39,7 @@ import type {
   MoveCollectRequest,
   UpdateCollectGroupRequest,
 } from './dto';
+import { collectRepository } from './repository';
 
 /**
  * 从请求 token 中获取当前用户 ID，兜底 1（mock 环境）
@@ -97,9 +83,9 @@ export async function getCollectGroups(
 }> {
   const type = (data.type || 'doc') as CollectType;
 
-  // 1. 从 L1 数据库获取数据（主存储）
-  const allGroups = await collectGroupTable.findAll();
-  const allCollects = await collectTable.findAll();
+  // 1. 获取数据
+  const allGroups = await collectRepository.findAllGroups();
+  const allCollects = await collectRepository.findAllCollects();
 
   // 2. 按用户 + 类型筛选并排序
   const filteredGroups = allGroups
@@ -150,8 +136,8 @@ export async function createCollectGroup(
   const description = data.description || '';
   const icon = data.icon;
 
-  // 1. 检查名称是否重复（同用户 + 同类型下）
-  const allGroups = await collectGroupTable.findAll();
+  // 1. 检查名称是否重复
+  const allGroups = await collectRepository.findAllGroups();
   const duplicate = allGroups.find(
     (g) => g.user_id === userId && g.name === name && g.type === type,
   );
@@ -159,13 +145,13 @@ export async function createCollectGroup(
     throw new BusinessError('分组名称已存在');
   }
 
-  // 2. 计算 sort（同类型下分组数量 + 1）
+  // 2. 计算 sort
   const sort =
     data.sort ??
     allGroups.filter((g) => g.user_id === userId && g.type === type).length + 1;
 
-  // 3. 创建分组（L1 主存储）
-  const newGroup = await collectGroupTable.create({
+  // 3. 创建分组
+  const newGroup = await collectRepository.createGroup({
     name,
     user_id: userId,
     type,
@@ -173,15 +159,11 @@ export async function createCollectGroup(
     icon,
     description,
     created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
-  } as MockCollectGroup);
+  } as Partial<MockCollectGroup>);
 
-  // 4. 清除相关缓存（L3）
-  try {
-    collectGroupListCache.del(`${userId}:${type}`);
-    collectGroupInfoCache.del(String(newGroup.id));
-  } catch (error) {
-    console.warn('[CollectCache] 清除缓存失败:', error);
-  }
+  // 4. 清除缓存
+  await collectRepository.clearGroupListCache(userId, type);
+  await collectRepository.clearGroupInfoCache(newGroup.id);
 
   return newGroup;
 }
@@ -203,15 +185,15 @@ export async function updateCollectGroup(
   data: UpdateCollectGroupRequest,
 ): Promise<MockCollectGroup> {
   // 1. 检查分组是否存在
-  const group = await collectGroupTable.findById(groupId);
+  const group = await collectRepository.findGroupById(groupId);
   if (!group) {
     throw new BusinessError('分组不存在');
   }
 
-  // 2. 如果提供了名称，检查名称是否重复（同用户 + 同类型下）
+  // 2. 如果提供了名称，检查名称是否重复
   if (data.name && data.name.trim()) {
     const name = data.name.trim();
-    const allGroups = await collectGroupTable.findAll();
+    const allGroups = await collectRepository.findAllGroups();
     const duplicate = allGroups.find(
       (g) =>
         g.id !== groupId &&
@@ -231,16 +213,12 @@ export async function updateCollectGroup(
   if (data.sort !== undefined) updateData.sort = data.sort;
   if (data.icon !== undefined) updateData.icon = data.icon;
 
-  // 4. 更新分组（L1 主存储）
-  const updatedGroup = await collectGroupTable.updateById(groupId, updateData);
+  // 4. 更新分组
+  const updatedGroup = await collectRepository.updateGroup(groupId, updateData);
 
-  // 5. 清除相关缓存（L3）
-  try {
-    collectGroupListCache.del(`${group.user_id}:${group.type}`);
-    collectGroupInfoCache.del(String(groupId));
-  } catch (error) {
-    console.warn('[CollectCache] 清除缓存失败:', error);
-  }
+  // 5. 清除缓存
+  await collectRepository.clearGroupListCache(group.user_id, group.type);
+  await collectRepository.clearGroupInfoCache(groupId);
 
   return updatedGroup!;
 }
@@ -258,13 +236,13 @@ export async function updateCollectGroup(
  */
 export async function deleteCollectGroup(groupId: number): Promise<null> {
   // 1. 检查分组是否存在
-  const group = await collectGroupTable.findById(groupId);
+  const group = await collectRepository.findGroupById(groupId);
   if (!group) {
     throw new BusinessError('分组不存在');
   }
 
   // 2. 检查该分组下是否有收藏项
-  const allCollects = await collectTable.findAll();
+  const allCollects = await collectRepository.findAllCollects();
   const collectCount = allCollects.filter(
     (c) => c.group_id === groupId && c.type === group.type,
   ).length;
@@ -274,17 +252,13 @@ export async function deleteCollectGroup(groupId: number): Promise<null> {
     );
   }
 
-  // 3. 删除分组（L1 主存储）
-  await collectGroupTable.deleteById(groupId);
+  // 3. 删除分组
+  await collectRepository.deleteGroup(groupId);
 
-  // 4. 清除相关缓存（L3）
-  try {
-    collectGroupListCache.del(`${group.user_id}:${group.type}`);
-    collectGroupInfoCache.del(String(groupId));
-    collectCountCache.del(String(groupId));
-  } catch (error) {
-    console.warn('[CollectCache] 清除缓存失败:', error);
-  }
+  // 4. 清除缓存
+  await collectRepository.clearGroupListCache(group.user_id, group.type);
+  await collectRepository.clearGroupInfoCache(groupId);
+  await collectRepository.clearCollectCountCache(groupId);
 
   return null;
 }
@@ -320,15 +294,15 @@ export async function getCollectList(
   const keyword = data.keyword || '';
   const type = (data.type || 'doc') as CollectType;
 
-  // 1. 从 L1 数据库获取数据（主存储）
+  // 1. 获取数据
   const [allCollects, allGroups, allDocs, allVersions, allProjects, allProjectCategories] =
     await Promise.all([
-      collectTable.findAll(),
-      collectGroupTable.findAll(),
-      docTable.findAll(),
-      docVersionTable.findAll(),
-      projectTable.findAll(),
-      projectCategoryTable.findAll(),
+      collectRepository.findAllCollects(),
+      collectRepository.findAllGroups(),
+      collectRepository.findAllDocs(),
+      collectRepository.findAllVersions(),
+      collectRepository.findAllProjects(),
+      collectRepository.findAllProjectCategories(),
     ]);
 
   // 2. 统一表过滤：按用户 + type
@@ -336,12 +310,12 @@ export async function getCollectList(
     (c) => c.user_id === userId && c.type === type,
   );
 
-  // 3. 分组筛选（-1 表示全部，0 表示未分组，其他表示指定分组）
+  // 3. 分组筛选
   if (groupId >= 0) {
     result = result.filter((c) => c.group_id === groupId);
   }
 
-  // 4. 关联目标信息（文档或文集）
+  // 4. 关联目标信息
   let itemList: CollectItem[] = result
     .map((c) => {
       const group = allGroups.find((g) => g.id === c.group_id);
@@ -427,8 +401,8 @@ export async function createCollect(
   const targetId = Number(data.target_id);
   const groupId = data.group_id ?? 0;
 
-  // 1. 检查是否已收藏（同用户 + 同 type + 同 target_id）
-  const allCollects = await collectTable.findAll();
+  // 1. 检查是否已收藏
+  const allCollects = await collectRepository.findAllCollects();
   const existing = allCollects.find(
     (c) => c.user_id === userId && c.type === type && c.target_id === targetId,
   );
@@ -438,20 +412,20 @@ export async function createCollect(
 
   // 2. 如果指定了分组，检查分组是否存在
   if (groupId > 0) {
-    const group = await collectGroupTable.findById(groupId);
+    const group = await collectRepository.findGroupById(groupId);
     if (!group) {
       throw new BusinessError('分组不存在');
     }
   }
 
-  // 3. 获取目标信息（用于冗余字段快照保存）
+  // 3. 获取目标信息
   let targetName = '';
   let targetSummary = '';
   let targetCover = '';
   let targetAuthor = '';
 
   if (type === 'doc') {
-    const doc = await docTable.findById(targetId);
+    const doc = await collectRepository.findDocById(targetId);
     if (!doc) {
       throw new BusinessError('文档不存在');
     }
@@ -459,7 +433,7 @@ export async function createCollect(
     targetSummary = doc.summary || '';
     targetAuthor = doc.author_name || '';
   } else {
-    const project = await projectTable.findById(targetId);
+    const project = await collectRepository.findProjectById(targetId);
     if (!project) {
       throw new BusinessError('文集不存在');
     }
@@ -469,8 +443,8 @@ export async function createCollect(
     targetAuthor = '';
   }
 
-  // 4. 创建收藏（L1 主存储）
-  const newCollect = await collectTable.create({
+  // 4. 创建收藏
+  const newCollect = await collectRepository.createCollect({
     user_id: userId,
     type,
     target_id: targetId,
@@ -480,18 +454,14 @@ export async function createCollect(
     target_cover: targetCover,
     target_author: targetAuthor,
     collected_at: new Date().toLocaleString('zh-CN', { hour12: false }),
-  } as MockCollect);
+  } as Partial<MockCollect>);
 
-  // 5. 清除相关缓存（L3）
-  try {
-    collectListCache.del(`${userId}:${type}:${groupId}`);
-    collectByTargetCache.del(`${userId}:${type}:${targetId}`);
-    collectInfoCache.del(String(newCollect.id));
-    collectCountCache.del(String(groupId));
-    collectGroupListCache.del(`${userId}:${type}`);
-  } catch (error) {
-    console.warn('[CollectCache] 清除缓存失败:', error);
-  }
+  // 5. 清除缓存
+  await collectRepository.clearCollectListCache(userId, type, groupId);
+  await collectRepository.clearCollectByTargetCache(userId, type, targetId);
+  await collectRepository.clearCollectInfoCache(newCollect.id);
+  await collectRepository.clearCollectCountCache(groupId);
+  await collectRepository.clearGroupListCache(userId, type);
 
   return newCollect;
 }
@@ -509,26 +479,20 @@ export async function createCollect(
  */
 export async function deleteCollect(collectId: number): Promise<null> {
   // 1. 检查收藏是否存在
-  const collect = await collectTable.findById(collectId);
+  const collect = await collectRepository.findCollectById(collectId);
   if (!collect) {
     throw new BusinessError('收藏记录不存在');
   }
 
-  // 2. 删除收藏（L1 主存储）
-  await collectTable.deleteById(collectId);
+  // 2. 删除收藏
+  await collectRepository.deleteCollect(collectId);
 
-  // 3. 清除相关缓存（L3）
-  try {
-    collectListCache.del(`${collect.user_id}:${collect.type}:${collect.group_id}`);
-    collectByTargetCache.del(
-      `${collect.user_id}:${collect.type}:${collect.target_id}`,
-    );
-    collectInfoCache.del(String(collectId));
-    collectCountCache.del(String(collect.group_id));
-    collectGroupListCache.del(`${collect.user_id}:${collect.type}`);
-  } catch (error) {
-    console.warn('[CollectCache] 清除缓存失败:', error);
-  }
+  // 3. 清除缓存
+  await collectRepository.clearCollectListCache(collect.user_id, collect.type, collect.group_id);
+  await collectRepository.clearCollectByTargetCache(collect.user_id, collect.type, collect.target_id);
+  await collectRepository.clearCollectInfoCache(collectId);
+  await collectRepository.clearCollectCountCache(collect.group_id);
+  await collectRepository.clearGroupListCache(collect.user_id, collect.type);
 
   return null;
 }
@@ -552,44 +516,34 @@ export async function moveCollect(
   const targetGroupId = Number(data.group_id);
 
   // 1. 检查收藏是否存在
-  const collect = await collectTable.findById(collectId);
+  const collect = await collectRepository.findCollectById(collectId);
   if (!collect) {
     throw new BusinessError('收藏记录不存在');
   }
 
   // 2. 如果目标分组不是未分组（0），检查分组是否存在
   if (targetGroupId > 0) {
-    const targetGroup = await collectGroupTable.findById(targetGroupId);
+    const targetGroup = await collectRepository.findGroupById(targetGroupId);
     if (!targetGroup) {
       throw new BusinessError('目标分组不存在');
     }
   }
 
-  // 3. 记录原分组 ID（用于清除缓存）
+  // 3. 记录原分组 ID
   const oldGroupId = collect.group_id;
 
-  // 4. 更新分组（L1 主存储）
-  const updatedCollect = await collectTable.updateById(collectId, {
+  // 4. 更新分组
+  const updatedCollect = await collectRepository.updateCollect(collectId, {
     group_id: targetGroupId,
   });
 
-  // 5. 清除相关缓存（L3）
-  try {
-    // 清除原分组的列表缓存
-    collectListCache.del(`${collect.user_id}:${collect.type}:${oldGroupId}`);
-    // 清除新分组的列表缓存
-    collectListCache.del(`${collect.user_id}:${collect.type}:${targetGroupId}`);
-    // 清除收藏详情缓存
-    collectInfoCache.del(String(collectId));
-    // 清除原分组的数量缓存
-    collectCountCache.del(String(oldGroupId));
-    // 清除新分组的数量缓存
-    collectCountCache.del(String(targetGroupId));
-    // 清除分组列表缓存
-    collectGroupListCache.del(`${collect.user_id}:${collect.type}`);
-  } catch (error) {
-    console.warn('[CollectCache] 清除缓存失败:', error);
-  }
+  // 5. 清除缓存
+  await collectRepository.clearCollectListCache(collect.user_id, collect.type, oldGroupId);
+  await collectRepository.clearCollectListCache(collect.user_id, collect.type, targetGroupId);
+  await collectRepository.clearCollectInfoCache(collectId);
+  await collectRepository.clearCollectCountCache(oldGroupId);
+  await collectRepository.clearCollectCountCache(targetGroupId);
+  await collectRepository.clearGroupListCache(collect.user_id, collect.type);
 
   return updatedCollect!;
 }
@@ -617,8 +571,8 @@ export async function checkCollected(
   const type = (data.type || 'doc') as CollectType;
   const targetId = Number(data.target_id);
 
-  // 1. 从 L1 数据库查询（主存储）
-  const allCollects = await collectTable.findAll();
+  // 1. 查询收藏记录
+  const allCollects = await collectRepository.findAllCollects();
   const existing = allCollects.find(
     (c) => c.user_id === userId && c.type === type && c.target_id === targetId,
   );

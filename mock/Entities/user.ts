@@ -10,6 +10,7 @@ import { createTable } from '../Core/database';
 import { MockMongoCollection } from '../Core/mongodb';
 import { createRabbitMQInstance } from '../Core/rabbitmq';
 import { createCache, redis } from '../Core/redis';
+import { bloomBatchAdd, bloomReserve, createBloomFilter } from '../Core/utils';
 
 // #region 用户初始化队列配置
 // ============================================================================
@@ -237,7 +238,8 @@ export const userTable: MockTable<MockUser> = createTable<MockUser>({
         type: 'string',
         minLength: 6,
         maxLength: 256,
-        message: '密码加密后长度超限（原始密码6-50字符，AES-256-GCM加密后不超过256字符）',
+        message:
+          '密码加密后长度超限（原始密码6-50字符，AES-256-GCM加密后不超过256字符）',
       },
       nickname: {
         required: true,
@@ -334,15 +336,67 @@ export type UserTable = MockTable<MockUser>;
 // #endregion 用户表实例（基于MockTable ORM）
 
 // #region 用户缓存缓存层（L3：Redis（KV 缓存，延迟最低）
-// ==================== Redis缓存层（createCache 命名空间缓存） ====================
+// ==================== 1. Redis缓存层（配置） ====================
 
-/** 用户缓存配置（前缀 + TTL） */
+/** 用户缓存配置（前缀 + TTL + 异步延迟） */
 const USER_CACHE_CONFIG = {
-  token: { prefix: 'user:token:', ttl: 7 * 24 * 60 * 60 * 1000 }, // Token：7天
-  resetCode: { prefix: 'user:reset:code:', ttl: 5 * 60 * 1000 }, // 重置验证码：5分钟
-  user: { prefix: 'user:info:', ttl: 10 * 60 * 1000 }, // 单个用户：10分钟
-  userList: { prefix: 'user:list:', ttl: 1 * 60 * 1000 }, // 用户列表：1分钟
+  token: {
+    prefix: 'user:token:',
+    ttl: 7 * 24 * 60 * 60 * 1000, // Token：7天
+    async: true,
+    asyncConfig: {
+      delayEnabled: true,
+      minDelay: 1,
+      maxDelay: 3,
+      delayMode: 'random' as const,
+    },
+  },
+  resetCode: {
+    prefix: 'user:reset:code:',
+    ttl: 5 * 60 * 1000, // 重置验证码：5分钟
+    async: true,
+    asyncConfig: {
+      delayEnabled: true,
+      minDelay: 1,
+      maxDelay: 3,
+      delayMode: 'random' as const,
+    },
+  },
+  user: {
+    prefix: 'user:info:',
+    ttl: 10 * 60 * 1000, // 单个用户：10分钟
+    async: true,
+    asyncConfig: {
+      delayEnabled: true,
+      minDelay: 1,
+      maxDelay: 5,
+      delayMode: 'random' as const,
+    },
+  },
+  userList: {
+    prefix: 'user:list:',
+    ttl: 1 * 60 * 1000, // 用户列表：1分钟
+    async: true,
+    asyncConfig: {
+      delayEnabled: true,
+      minDelay: 1,
+      maxDelay: 5,
+      delayMode: 'random' as const,
+    },
+  },
+  // 布隆过滤器配置（唯一性校验）
+  bloomUsername: {
+    key: 'user:bloom:username',
+    capacity: 100000,
+    errorRate: 0.01,
+  }, // 用户名布隆过滤器
+  bloomEmail: {
+    key: 'user:bloom:email',
+    capacity: 100000,
+    errorRate: 0.01,
+  }, // 邮箱布隆过滤器
 } as const;
+// ==================== 2. Redis缓存层（实例实现） ====================
 /**
  * 用户Token缓存
  * 前缀：user:token: | TTL：7天
@@ -376,126 +430,27 @@ export const userCache = createCache(USER_CACHE_CONFIG.user);
  *   'admin:1:20::disabled': { list: [...], total: 3, page: 1, pageSize: 20 }
  * }
  * 键：admin:page:pageSize:keyword:status | 值：{ list: MockUser[], total: number, page: number, pageSize: number }
- * invalidateAll：失效所有列表缓存（用户数据变更时调用）
  */
-export const userListCache = createCache(
-  USER_CACHE_CONFIG.userList,
-) as ReturnType<typeof createCache> & {
-  /** 失效所有列表缓存 */
-  invalidateAll(): void;
-};
-/** 失效所有列表缓存 */
-userListCache.invalidateAll = (): void => {
-  userListCache.keys('*').forEach((key) => userListCache.del(key));
-};
-// ==================== 布隆过滤器（唯一性校验） ====================
+export const userListCache = createCache(USER_CACHE_CONFIG.userList);
 /**
- * 布隆过滤器配置
- *
- * 【作用】
- * 高效进行 username 和 email 的唯一性校验，避免每次都查询数据库
- *
- * 【原理】
- * - 布隆过滤器可以快速判断"一定不存在"（100% 准确）
- * - 如果判断"可能存在"，则需要查询数据库确认（有误判率，默认 1%）
- *
- * 【性能优势】
- * - 空间效率高：10 万个元素只需约 120KB 内存（1% 误判率）
- * - 查询速度快：O(k)，k 为哈希函数数量，通常为 3-10
- * - 减少数据库压力：大部分"不存在"的查询直接被布隆过滤器拦截
- *
- * 【使用流程】
- * 1. 注册/更新时，先查布隆过滤器
- * 2. 如果布隆过滤器说"不存在"，直接通过（100% 准确）
- * 3. 如果布隆过滤器说"可能存在"，再查数据库确认（防止误判）
- * 4. 创建用户成功后，将 username 和 email 添加到布隆过滤器
+ * 用户名布隆过滤器
+ * Key：user:bloom:username | 容量：10万 | 误判率：1%
+ * 用于快速判断用户名是否一定不存在，减少数据库查询
  */
-
-/** 用户名布隆过滤器键名 */
-const USERNAME_BLOOM_KEY = 'user:bloom:username';
-/** 邮箱布隆过滤器键名 */
-const EMAIL_BLOOM_KEY = 'user:bloom:email';
-/** 布隆过滤器期望容量（预估用户总数） */
-const BLOOM_CAPACITY = 100000;
-/** 布隆过滤器期望误判率（1%） */
-const BLOOM_ERROR_RATE = 0.01;
-
+export const usernameBloomFilter = createBloomFilter(
+  USER_CACHE_CONFIG.bloomUsername,
+);
 /**
- * 检查用户名是否可能存在
- *
- * 【返回值说明】
- * - false：一定不存在（100% 准确，可直接通过）
- * - true：可能存在（需要查数据库确认，有误判率）
- *
- * @param username 用户名
- * @returns false=一定不存在，true=可能存在
+ * 邮箱布隆过滤器
+ * Key：user:bloom:email | 容量：10万 | 误判率：1%
+ * 用于快速判断邮箱是否一定不存在，减少数据库查询
  */
-export function usernameMayExist(username: string): boolean {
-  return redis.bfExists(USERNAME_BLOOM_KEY, username);
-}
-
-/**
- * 检查邮箱是否可能存在
- *
- * 【返回值说明】
- * - false：一定不存在（100% 准确，可直接通过）
- * - true：可能存在（需要查数据库确认，有误判率）
- *
- * @param email 邮箱
- * @returns false=一定不存在，true=可能存在
- */
-export function emailMayExist(email: string): boolean {
-  return redis.bfExists(EMAIL_BLOOM_KEY, email);
-}
-
-/**
- * 添加用户名到布隆过滤器
- * 用户创建成功后调用
- *
- * @param username 用户名
- */
-export function addUsernameToBloom(username: string): void {
-  redis.bfAdd(USERNAME_BLOOM_KEY, username);
-}
-
-/**
- * 添加邮箱到布隆过滤器
- * 用户创建成功后调用
- *
- * @param email 邮箱
- */
-export function addEmailToBloom(email: string): void {
-  redis.bfAdd(EMAIL_BLOOM_KEY, email);
-}
-
-/**
- * 批量添加用户名和邮箱到布隆过滤器
- * 批量创建用户时调用
- *
- * @param usernames 用户名数组
- * @param emails 邮箱数组
- */
-export function batchAddToBloom(usernames: string[], emails: string[]): void {
-  if (usernames.length > 0) redis.bfMAdd(USERNAME_BLOOM_KEY, usernames);
-  if (emails.length > 0) redis.bfMAdd(EMAIL_BLOOM_KEY, emails);
-}
-
-/**
- * 获取布隆过滤器信息（用于调试和监控）
- */
-export function getBloomFilterInfo(): {
-  username: ReturnType<typeof redis.bfInfo>;
-  email: ReturnType<typeof redis.bfInfo>;
-} {
-  return {
-    username: redis.bfInfo(USERNAME_BLOOM_KEY),
-    email: redis.bfInfo(EMAIL_BLOOM_KEY),
-  };
-}
+export const emailBloomFilter = createBloomFilter(USER_CACHE_CONFIG.bloomEmail);
 
 // #endregion 用户缓存配置
 
 // #region 用户 MongoDB集合定义（L2：MongoDB（文档数据库，支持复杂查询））
+// ==================== 1. MongoDB集合定义（类型定义并使用固定数据初始化） ====================
 /**
  * 用户 MongoDB 集合
  *
@@ -520,15 +475,12 @@ export const userMongoCollection: MockMongoCollection<MockUser> =
     },
   });
 
-// ============================================================================
-// 7. MongoDB 索引初始化
-// ============================================================================
+// ==================== 2. MongoDB集合定义（索引初始化） ====================
 // 索引设计原则与 database 层保持一致：
 // 1. 高频查询字段建索引，低区分度字段不单独建索引
 // 2. 复合索引优先于单字段索引（覆盖更多查询场景）
 // 3. 索引顺序按查询频率和区分度排列（最左前缀原则）
 // 4. 避免冗余索引（被复合索引覆盖的单字段索引移除）
-
 /**
  * 初始化用户 MongoDB 集合索引
  *
@@ -558,13 +510,13 @@ function initUserMongoIndexes(): void {
 
   console.log('[UserMongo] 用户集合索引初始化完成：共 3 个索引（2唯一+1复合）');
 }
-
+// ==================== 3. MongoDB集合定义（索引初始化立即执行） ====================
 // 立即执行 MongoDB 索引初始化
 initUserMongoIndexes();
 // #endregion MongoDB 集合定义（基于MockMongoCollection ORM）
 
 // #region 冷启动初始化与定时启动函数
-
+// ==================== 1. 全局冷启动初始化（MongoDB + Redis） ====================
 /**
  * 处理器 1：布隆过滤器初始化
  *
@@ -575,8 +527,8 @@ initUserMongoIndexes();
 async function bloomFilterHandler(message: UserBatchMessage): Promise<void> {
   // 第一批创建布隆过滤器
   if (message.batchIndex === 1) {
-    redis.bfReserve(USERNAME_BLOOM_KEY, BLOOM_ERROR_RATE, BLOOM_CAPACITY);
-    redis.bfReserve(EMAIL_BLOOM_KEY, BLOOM_ERROR_RATE, BLOOM_CAPACITY);
+    usernameBloomFilter.reserve();
+    emailBloomFilter.reserve();
     console.log('[BloomFilterHandler] 布隆过滤器已创建');
   }
 
@@ -585,63 +537,10 @@ async function bloomFilterHandler(message: UserBatchMessage): Promise<void> {
   const emails = message.data.map((u) => u.email).filter(Boolean);
 
   // 批量添加到布隆过滤器
-  if (usernames.length > 0) {
-    redis.bfMAdd(USERNAME_BLOOM_KEY, usernames);
-  }
-  if (emails.length > 0) {
-    redis.bfMAdd(EMAIL_BLOOM_KEY, emails);
-  }
+  usernameBloomFilter.batchAdd(usernames);
+  emailBloomFilter.batchAdd(emails);
 }
 
-/**
- * 创建临时布隆过滤器处理器（双缓冲区重建用）
- *
- * 【职责】
- * 创建一个写入临时布隆过滤器的处理器，用于双缓冲区重建。
- * 第一批需要先创建临时布隆过滤器。
- * 同时累计统计 username/email 数量，避免后续重复查询数据库。
- *
- * @param tmpUsernameKey 临时 username 布隆过滤器 key
- * @param tmpEmailKey 临时 email 布隆过滤器 key
- * @param stats 统计对象（累计 usernameCount/emailCount）
- * @returns 批次消息处理器
- */
-function createTmpBloomFilterHandler(
-  tmpUsernameKey: string,
-  tmpEmailKey: string,
-  stats?: { usernameCount: number; emailCount: number },
-): BatchMessageHandler<MockUser> {
-  return async (message: UserBatchMessage): Promise<void> => {
-    // 第一批创建临时布隆过滤器
-    if (message.batchIndex === 1) {
-      redis.bfReserve(tmpUsernameKey, BLOOM_ERROR_RATE, BLOOM_CAPACITY);
-      redis.bfReserve(tmpEmailKey, BLOOM_ERROR_RATE, BLOOM_CAPACITY);
-      console.log('[TmpBloomFilterHandler] 临时布隆过滤器已创建');
-    }
-
-    // 提取 username 和 email
-    const usernames = message.data.map((u) => u.username).filter(Boolean);
-    const emails = message.data.map((u) => u.email).filter(Boolean);
-
-    // 批量添加到临时布隆过滤器
-    if (usernames.length > 0) {
-      redis.bfMAdd(tmpUsernameKey, usernames);
-    }
-    if (emails.length > 0) {
-      redis.bfMAdd(tmpEmailKey, emails);
-    }
-
-    // 累计统计（避免后续重复查询数据库）
-    if (stats) {
-      stats.usernameCount += usernames.length;
-      stats.emailCount += emails.length;
-    }
-  };
-}
-
-// ============================================================================
-// 9. 全局冷启动初始化（MongoDB + Redis）
-// ============================================================================
 // 统一初始化 MongoDB（L2）和 Redis（L3）缓存
 // 【阶段 1】MongoDB 作为只读 L2，运行时不更新，只在冷启动时重建
 // 【数据流向】MockTable（L1）→ MongoDB（L2）→ Redis（L3）
@@ -698,6 +597,61 @@ export async function syncUserToRedisAndMongo(): Promise<void> {
   );
 }
 
+// ==================== 2. 模块加载时自动执行全局冷启动初始化 ====================
+// 模块加载时自动执行全局冷启动初始化
+syncUserToRedisAndMongo();
+
+// ==================== 3. 定期全量重建（保证数据一致性） ====================
+/**
+ * 创建临时布隆过滤器处理器（双缓冲区重建用）
+ *
+ * 【职责】
+ * 创建一个写入临时布隆过滤器的处理器，用于双缓冲区重建。
+ * 第一批需要先创建临时布隆过滤器。
+ * 同时累计统计 username/email 数量，避免后续重复查询数据库。
+ *
+ * @param tmpUsernameKey 临时 username 布隆过滤器 key
+ * @param tmpEmailKey 临时 email 布隆过滤器 key
+ * @param stats 统计对象（累计 usernameCount/emailCount）
+ * @returns 批次消息处理器
+ */
+function createTmpBloomFilterHandler(
+  tmpUsernameKey: string,
+  tmpEmailKey: string,
+  stats?: { usernameCount: number; emailCount: number },
+): BatchMessageHandler<MockUser> {
+  return async (message: UserBatchMessage): Promise<void> => {
+    // 第一批创建临时布隆过滤器
+    if (message.batchIndex === 1) {
+      bloomReserve(
+        tmpUsernameKey,
+        usernameBloomFilter.errorRate,
+        usernameBloomFilter.capacity,
+      );
+      bloomReserve(
+        tmpEmailKey,
+        emailBloomFilter.errorRate,
+        emailBloomFilter.capacity,
+      );
+      console.log('[TmpBloomFilterHandler] 临时布隆过滤器已创建');
+    }
+
+    // 提取 username 和 email
+    const usernames = message.data.map((u) => u.username).filter(Boolean);
+    const emails = message.data.map((u) => u.email).filter(Boolean);
+
+    // 批量添加到临时布隆过滤器
+    bloomBatchAdd(tmpUsernameKey, usernames);
+    bloomBatchAdd(tmpEmailKey, emails);
+
+    // 累计统计（避免后续重复查询数据库）
+    if (stats) {
+      stats.usernameCount += usernames.length;
+      stats.emailCount += emails.length;
+    }
+  };
+}
+
 /**
  * 定期全量重建用户布隆过滤器（异步 + RabbitMQ 生产者-消费者模式）
  *
@@ -740,8 +694,8 @@ export async function rebuildUserBloomFilters(
   const startTime = Date.now();
 
   // 临时布隆过滤器键名
-  const TMP_USERNAME_KEY = `${USERNAME_BLOOM_KEY}:tmp`;
-  const TMP_EMAIL_KEY = `${EMAIL_BLOOM_KEY}:tmp`;
+  const TMP_USERNAME_KEY = `${usernameBloomFilter.key}:tmp`;
+  const TMP_EMAIL_KEY = `${emailBloomFilter.key}:tmp`;
 
   try {
     // ========== 阶段 1：准备临时布隆过滤器 ==========
@@ -757,7 +711,7 @@ export async function rebuildUserBloomFilters(
     // 使用独立队列 BLOOM_REBUILD_QUEUE_CONFIG，避免与 syncUserToRedisAndMongo 冲突
     // 【优化】通用函数内部已计算总数和批次数，返回统计信息，避免重复查询数据库
 
-    // 2.1 生产者：分批从 DB 获取数据并发布到队列（使用通用函数）
+    // 2.1 生产者：分批从 DB 获取数据并发布到队列（使用通用函数，只读取 username/email 字段）
     const { totalCount: totalUsers, totalBatches: batchCount } =
       await fetchAllWithCursorAndPublish<MockUser>(
         userTable,
@@ -765,6 +719,7 @@ export async function rebuildUserBloomFilters(
         'id',
         BLOOM_REBUILD_QUEUE_CONFIG,
         userInitRabbitmq,
+        ['username', 'email'], // 字段投影：布隆过滤器只需要 username 和 email
       );
 
     console.log(
@@ -793,9 +748,12 @@ export async function rebuildUserBloomFilters(
     // 真实 Redis 中 rename 是原子操作，不会出现中间状态
     const renameUsernameSuccess = redis.rename(
       TMP_USERNAME_KEY,
-      USERNAME_BLOOM_KEY,
+      usernameBloomFilter.key,
     );
-    const renameEmailSuccess = redis.rename(TMP_EMAIL_KEY, EMAIL_BLOOM_KEY);
+    const renameEmailSuccess = redis.rename(
+      TMP_EMAIL_KEY,
+      emailBloomFilter.key,
+    );
 
     if (!renameUsernameSuccess || !renameEmailSuccess) {
       throw new Error(
@@ -858,7 +816,4 @@ export async function rebuildUserBloomFilters(
     };
   }
 }
-
-// 模块加载时自动执行全局冷启动初始化
-syncUserToRedisAndMongo();
 // #endregion 冷启动初始化与工具函数

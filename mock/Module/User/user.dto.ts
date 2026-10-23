@@ -2,9 +2,9 @@
 // 普通用户 DTO（Data Transfer Object，数据传输对象）
 // 功能：定义普通用户接口请求参数和响应数据的类型结构
 
-import type { MockUser, MockEditorSettings } from '../../Entities/user';
+import type { MockEditorSettings, MockUser } from '../../Entities/user';
 
-// ==================== 认证相关 DTO ====================
+// ==================== 登录相关 DTO ====================
 
 /** 登录请求参数 */
 export interface LoginRequest {
@@ -21,6 +21,8 @@ export interface LoginResponse {
   /** 用户信息（已过滤敏感字段） */
   user: Omit<MockUser, 'password'>;
 }
+
+// ==================== 退出登录相关 DTO ====================
 
 /** 退出登录请求参数（无需参数，保留空接口用于扩展） */
 export interface LogoutRequest {}
@@ -76,10 +78,12 @@ export interface ResetPasswordRequest {
 /** 重置密码响应数据（无数据） */
 export type ResetPasswordResponse = null;
 
-// ==================== 个人中心相关 DTO ====================
+// ==================== 获取当前用户信息相关 DTO ====================
 
 /** 获取当前用户信息响应数据（data 字段内容） */
 export type CurrentUserResponse = Omit<MockUser, 'password'>;
+
+// ==================== 个人中心相关 DTO ====================
 
 /** 更新个人资料请求参数 */
 export interface UpdateProfileRequest {

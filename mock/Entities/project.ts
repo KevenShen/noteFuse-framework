@@ -1,10 +1,16 @@
-import { type BatchMessage, type QueueConfig } from '../Core/common';
+import {
+  type BatchMessage,
+  type BatchMessageHandler,
+  type QueueConfig,
+  consumeBatch,
+} from '../Core/common';
 import type { MockTable } from '../Core/database';
 import { createTable } from '../Core/database';
 import { MockMongoCollection } from '../Core/mongodb';
 import { createRabbitMQInstance } from '../Core/rabbitmq';
 import { createCache, redis } from '../Core/redis';
-import { docCategories, docs } from './doc';
+import { computeTreeCacheData, scanAllKeysByPrefixes } from '../Core/utils';
+import { docCategories, docs, docCategoryTable, docTable } from './doc';
 
 // #region 文集初始化队列配置
 // ============================================================================
@@ -933,7 +939,86 @@ export const projectTable: MockTable<MockProject> = createTable<MockProject>({
   },
 });
 
-// ==================== 4. 数据库索引初始化 ====================
+// ==================== 4. 表关联关系定义（Sequelize 风格） ====================
+
+/**
+ * 分类与文集的关联关系
+ *
+ * 【关系说明】
+ * - 一个分类包含多个文集（一对多）
+ * - 一个文集属于一个分类（多对一）
+ * - 外键：project_category_id（在文集表中）
+ *
+ * 【使用示例】
+ * ```typescript
+ * // 查询分类时包含文集列表
+ * const category = await categoryTable.findById(1, { include: ['projects'] });
+ * // category.projects = [{ id: 101, name: '...' }, ...]
+ *
+ * // 查询文集时包含分类信息
+ * const project = await projectTable.findById(101, { include: ['category'] });
+ * // project.category = { id: 1, name: '...' }
+ *
+ * // 手动获取/设置关联
+ * const projects = categoryTable.getAssociation(1, 'projects');
+ * categoryTable.setAssociation(1, 'projects', [101, 102]);
+ * ```
+ */
+categoryTable.hasMany(projectTable, {
+  foreignKey: 'project_category_id',
+  as: 'projects',
+});
+
+projectTable.belongsTo(categoryTable, {
+  foreignKey: 'project_category_id',
+  as: 'category',
+});
+
+/**
+ * 文集与文档分类、文档的关联关系
+ *
+ * 【关系说明】
+ * - 一个文集包含多个文档分类（一对多）
+ * - 一个文集包含多个文档（一对多）
+ * - 外键：project_id（在文档分类表和文档表中）
+ *
+ * 【使用示例】
+ * ```typescript
+ * // 查询文集时包含文档分类列表和文档列表
+ * const project = await projectTable.findById(1, { include: ['docCategories', 'docs'] });
+ * // project.docCategories = [{ id: 101, name: '...' }, ...]
+ * // project.docs = [{ id: 1001, name: '...' }, ...]
+ *
+ * // 查询文档分类时包含文集信息
+ * const docCategory = await docCategoryTable.findById(101, { include: ['project'] });
+ * // docCategory.project = { id: 1, name: '...' }
+ *
+ * // 查询文档时包含文集信息
+ * const doc = await docTable.findById(1001, { include: ['project'] });
+ * // doc.project = { id: 1, name: '...' }
+ * ```
+ */
+projectTable.hasMany(docCategoryTable, {
+  foreignKey: 'project_id',
+  as: 'docCategories',
+});
+
+docCategoryTable.belongsTo(projectTable, {
+  foreignKey: 'project_id',
+  as: 'project',
+});
+
+projectTable.hasMany(docTable, {
+  foreignKey: 'project_id',
+  as: 'docs',
+});
+
+docTable.belongsTo(projectTable, {
+  foreignKey: 'project_id',
+  as: 'project',
+});
+
+// ==================== 5. 数据库索引初始化 ====================
 
 /**
  * 索引设计原则
@@ -1017,6 +1102,7 @@ export type CategoryTable = MockTable<MockProjectCategory>;
 // #endregion 文集与分类表实例（L1）
 
 // #region 文集缓存层（L3：Redis KV 缓存，延迟最低）
+// ==================== 1. Redis缓存层（配置） ====================
 /**
  * 文集缓存配置
  *
@@ -1122,6 +1208,7 @@ const PROJECT_CACHE_CONFIG = {
   },
 } as const;
 
+// ==================== 2. Redis缓存层（实例实现） ====================
 // ----------------------------------------------------------------------------
 // 5.1 分类缓存：五个独立管理器（Hash / List / String / Hash / Set）
 // ----------------------------------------------------------------------------
@@ -1294,7 +1381,7 @@ export const projectStatsCache = createCache(PROJECT_CACHE_CONFIG.projectStats);
 // #endregion 文集缓存层（L3）
 
 // #region 文集 MongoDB 集合定义（L2：MongoDB 文档数据库，支持复杂查询）
-
+// ==================== 1. MongoDB集合定义（类型定义并使用固定数据初始化） ====================
 /**
  * 带统计字段的分类文档（MongoDB 使用）
  * 在 MockProjectCategory 基础上增加统计和关联字段
@@ -1383,14 +1470,7 @@ export const projectMongoCollection: MockMongoCollection<MongoProject> =
     },
   );
 
-// ============================================================================
-// MongoDB 索引初始化
-// ============================================================================
-// 索引设计原则与 database 层保持一致：
-// 1. 高频查询字段建索引，低区分度字段不单独建索引
-// 2. 复合索引优先于单字段索引（覆盖更多查询场景）
-// 3. 索引顺序按查询频率和区分度排列（最左前缀原则）
-// 4. 避免冗余索引（被复合索引覆盖的单字段索引移除）
+// ==================== 2. MongoDB集合定义（索引初始化） ====================
 
 /**
  * 初始化分类 MongoDB 集合索引
@@ -1407,7 +1487,7 @@ function initCategoryMongoIndexes(): void {
 
   console.log('[ProjectMongo] 分类集合索引初始化完成：共 1 个复合索引');
 }
-
+// ==================== 3. MongoDB集合定义（索引初始化立即执行） ====================
 /**
  * 初始化文集 MongoDB 集合索引
  *
@@ -1451,154 +1531,38 @@ initCategoryMongoIndexes();
 // #endregion MongoDB 集合定义（L2 文档数据库）
 
 // #region 冷启动初始化与工具函数
-
+// ==================== 1. 全局冷启动初始化（MongoDB + Redis） ====================
 /**
- * 使用 SCAN 迭代获取所有匹配的键（替代 KEYS，避免大数据量时阻塞）
- *
- * 【与 KEYS 的区别】
- * - KEYS：一次性返回所有匹配的键，数据量大时会阻塞
- * - SCAN：基于游标的增量式迭代，每次返回一小批，不会阻塞
- *
- * 【使用场景】
- * - 需要获取所有匹配的键进行批量操作（如删除、重命名）
- * - 数据量可能很大，不适合使用 KEYS
- *
- * @param pattern 匹配模式（支持 * ? [abc] 通配符）
- * @param count 每次迭代的数量提示，默认 100
- * @returns 所有匹配的键列表
- */
-async function scanAllKeys(
-  pattern: string,
-  count: number = 100,
-): Promise<string[]> {
-  const allKeys: string[] = [];
-  let cursor = 0;
-
-  do {
-    const result = redis.scan(cursor, { match: pattern, count });
-    allKeys.push(...result.elements);
-    cursor = result.cursor;
-  } while (cursor !== 0);
-
-  return allKeys;
-}
-
-/**
- * 批量获取多个前缀的所有键（使用 SCAN 替代 Pipeline.keys）
- *
- * 【功能】
- * 对每个前缀模式调用 scanAllKeys，然后聚合所有结果
- *
- * @param prefixes 前缀模式列表
- * @returns 所有匹配的键列表
- */
-async function scanAllKeysByPrefixes(prefixes: string[]): Promise<string[]> {
-  const allKeys: string[] = [];
-  for (const prefix of prefixes) {
-    const keys = await scanAllKeys(`${prefix}*`);
-    allKeys.push(...keys);
-  }
-  return allKeys;
-}
-
-/**
- * 1. 纯内存计算：构建分类树并预计算所有缓存数据
+ * 1. 分类缓存数据预计算（封装通用树形计算函数）
  * 【特点】无副作用，不依赖任何缓存组件，可独立进行单元测试
  * 【算法复杂度】O(N + M)，N=分类数，M=文集数
  *
- * 【优化点】
- * 1. directProjectsMap：存储每个分类下的文集 ID 列表（替代 directCountMap 只存数量）
- *    - 用途更广：可直接用于分类筛选、精确更新等场景
- *    - 数量可通过 .length 获取，不需要单独存储
- * 2. children 字段：存储直接子节点 ID 列表（替代 children_count 只存数量）
- *    - 用途更广：树形展示、级联操作、递归获取后代
- *    - 数量可通过 .length 获取，不需要单独存储
+ * 【底层实现】调用 Core/utils/tree.ts 的 computeTreeCacheData 通用函数
+ * 【字段映射】将通用字段名映射为项目特定字段名
  *
  * @param allCategories 全部分类数据
  * @param allProjects 全部文集数据
  * @returns 预计算结果（sorted/chainCacheMap/totalProjectCountMap/directProjectsMap）
  */
 export function computeCategoryCacheData(
-  allCategories: MockProjectCategory[],
-  allProjects: MockProject[],
+  allCategories: Array<Pick<MockProjectCategory, 'id' | 'parent_id' | 'sort'>>,
+  allProjects: Array<Pick<MockProject, 'id' | 'project_category_id'>>,
 ) {
-  // 1. 按 parent_id + sort 排序 (保证父节点先于子节点处理)
-  const sorted = [...allCategories].sort((a, b) => {
-    if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
-    return a.sort - b.sort;
+  const result = computeTreeCacheData(allCategories, allProjects, {
+    getId: (cat) => cat.id,
+    getParentId: (cat) => cat.parent_id,
+    getSort: (cat) => cat.sort,
+    getItemId: (p) => p.id,
+    getItemNodeId: (p) => p.project_category_id,
   });
-  // 2. 构建子分类映射 (邻接表)
-  // 这里建立的是：parent_id -> 直接子分类 ID 列表
-  // childrenMap = {
-  //   0: [1, 2],
-  //   1: [3, 4],
-  //   3: [5],
-  // };
-  const childrenMap = new Map<number, number[]>();
-  allCategories.forEach((cat) => {
-    if (!childrenMap.has(cat.parent_id)) childrenMap.set(cat.parent_id, []);
-    childrenMap.get(cat.parent_id)!.push(cat.id);
-  });
-  // 3. O(M) 统计每个分类下直接挂载的文集 ID 列表（替代 directCountMap 只存数量）
-  // 这里建立的是：分类 ID -> 直接挂载在该分类下的文集 ID 列表
-  // directProjectsMap = {
-  //   1: [101, 102],
-  //   2: [105],
-  //   3: [103],
-  //   5: [104],
-  // };
-  const directProjectsMap = new Map<number, number[]>();
-  allProjects.forEach((p) => {
-    if (!directProjectsMap.has(p.project_category_id)) {
-      directProjectsMap.set(p.project_category_id, []);
-    }
-    directProjectsMap.get(p.project_category_id)!.push(p.id);
-  });
-  // 4. O(N) 自顶向下计算链路 + 自底向上累加项目数
-  const chainCacheMap = new Map<
-    number,
-    {
-      chain: number[];
-      depth: number;
-      ancestors: number[];
-      children: number[]; // 直接子节点 ID 列表（替代 children_count，用途更广）
-    }
-  >();
-  // totalProjectCountMap 存储每个分类及其所有子孙分类下的文集总数。
-  const totalProjectCountMap = new Map<number, number>();
-  sorted.forEach((cat) => {
-    // 4.1 计算祖先链路 (记忆化，O(1) 复用父节点结果)
-    // 【深度定义】根节点（顶级分类，parent_id=0）深度为 0，子节点深度 = 父节点深度 + 1
-    // 【children】直接子节点 ID 列表，从 childrenMap 获取（替代 children_count）
-    const directChildren = childrenMap.get(cat.id) || [];
-    // 根节点 parent_id=0，chainCacheMap 中无 key=0，自然返回 undefined 走兜底分支
-    const parentChain = chainCacheMap.get(cat.parent_id);
-    chainCacheMap.set(
-      cat.id,
-      parentChain
-        ? {
-            depth: parentChain.depth + 1,
-            chain: [...parentChain.chain, cat.id],
-            ancestors: [...parentChain.ancestors, cat.parent_id],
-            children: directChildren,
-          }
-        : {
-            depth: 0,
-            chain: [cat.id],
-            ancestors: [],
-            children: directChildren,
-          },
-    );
-    // 4.2 计算项目总数 (自底向上累加，O(1) 复用子节点结果)
-    const selfCount = (directProjectsMap.get(cat.id) || []).length;
-    const childIds = childrenMap.get(cat.id) || [];
-    const childrenCount = childIds.reduce(
-      (sum, childId) => sum + (totalProjectCountMap.get(childId) || 0),
-      0,
-    );
-    totalProjectCountMap.set(cat.id, selfCount + childrenCount);
-  });
-  return { sorted, directProjectsMap, chainCacheMap, totalProjectCountMap };
+
+  // 字段映射：通用字段名 → 项目特定字段名
+  return {
+    sorted: result.sorted,
+    chainCacheMap: result.chainCacheMap,
+    directProjectsMap: result.directItemsMap,
+    totalProjectCountMap: result.totalCountMap,
+  };
 }
 
 /**
@@ -1616,7 +1580,7 @@ export function computeCategoryCacheData(
  */
 export async function initCategoryCache(
   allCategories: MockProjectCategory[] = projectCategories,
-  allProjects: MockProject[] = projects,
+  allProjects: Array<Pick<MockProject, 'id' | 'project_category_id'>> = projects,
 ): Promise<
   Array<MockProjectCategory & { project_count: number; project_ids: number[] }>
 > {
@@ -1768,9 +1732,325 @@ export async function initProjectMongoStats(): Promise<void> {
       `${projects.length} 个文集，耗时 ${duration}ms`,
   );
 }
-
+// ==================== 2. 模块加载时自动执行全局冷启动初始化 ====================
 // 模块加载时自动执行文集 MongoDB 统计字段初始化
 initProjectMongoStats();
 // 模块加载时自动执行分类缓存初始化（Redis + MongoDB）
 initCategoryCache();
+// ==================== 3. 定期全量重建（保证数据一致性） ====================
+
+/** 文集分段获取每页大小 */
+const PROJECT_BATCH_SIZE = 500;
+
+/** 分类详情分批获取/写入大小 */
+const CATEGORY_BATCH_SIZE = 200;
+
+/**
+ * 从 Table 全量获取分类元数据（只取 id/parent_id/sort）
+ *
+ * 【设计说明】
+ * 树形计算（祖先链路、子孙数量）只需要这 3 个字段，全量获取内存占用极小。
+ * 分类详情（name/icon/description 等）在写入阶段分批获取，避免常驻内存。
+ *
+ * @returns 分类元数据数组
+ */
+export async function fetchCategoryMetaFromTable(): Promise<
+  Array<Pick<MockProjectCategory, 'id' | 'parent_id' | 'sort'>>
+> {
+  const meta = (await categoryTable.findAll({
+    select: ['id', 'parent_id', 'sort'],
+  })) as Array<Pick<MockProjectCategory, 'id' | 'parent_id' | 'sort'>>;
+  console.log(
+    `[RebuildCategoryCache] 分类元数据全量获取：共 ${meta.length} 条（仅 id/parent_id/sort）`,
+  );
+  return meta;
+}
+
+/**
+ * 从 Table 分段获取文集数据（只提取 id 和 project_category_id）
+ *
+ * 【优化点】
+ * - 分段获取：避免一次性加载大量文集数据到内存
+ * - 字段精简：只提取计算所需的 id 和 project_category_id，减少内存占用
+ * - 按 id 排序：保证分页稳定性，避免遗漏或重复
+ *
+ * @returns 轻量文集数组（只含 id 和 project_category_id）
+ */
+export async function fetchProjectsFromTableInBatches(): Promise<
+  Array<Pick<MockProject, 'id' | 'project_category_id'>>
+> {
+  const allProjects: Array<Pick<MockProject, 'id' | 'project_category_id'>> =
+    [];
+  let page = 1;
+
+  while (true) {
+    const result = await projectTable.paginate(
+      {}, // 查询条件：全部
+      { id: 'asc' }, // 按 id 排序，保证分页稳定性
+      { page, pageSize: PROJECT_BATCH_SIZE },
+    );
+
+    // 只提取需要的字段，减少内存占用
+    const batch = result.list.map((p) => ({
+      id: p.id,
+      project_category_id: p.project_category_id,
+    }));
+    allProjects.push(...batch);
+
+    const totalPages = Math.ceil(result.total / result.pageSize);
+    console.log(
+      `[RebuildCategoryCache] 文集分段获取：第 ${page}/${totalPages} 页，本页 ${batch.length} 条，累计 ${allProjects.length} 条`,
+    );
+
+    // 已获取全部数据或当前页无数据时退出
+    if (batch.length === 0 || page >= totalPages) break;
+    page++;
+  }
+
+  return allProjects;
+}
+
+/**
+ * 创建分类重建消费者处理器（工厂函数）
+ *
+ * 【设计说明】
+ * 接收预计算的树形结构数据，返回 BatchMessageHandler，供 RabbitMQ 消费者调用。
+ * 消息体为完整分类对象数组，消费者直接使用，无需再次查询数据库。
+ *
+ * 【处理内容】
+ * 1. 按 ID 顺序排序（保证写入顺序一致）
+ * 2. 写入 Redis 5 类缓存（info/order/chain/count/projects）
+ * 3. 更新 MongoDB 统计字段（project_count/project_ids）
+ *
+ * @param chainCacheMap 祖先链路缓存映射
+ * @param totalProjectCountMap 文集总数映射
+ * @param directProjectsMap 直接文集 ID 列表映射
+ * @returns 批次消息处理器
+ */
+function createCategoryRebuildHandler(
+  chainCacheMap: Map<
+    number,
+    { chain: number[]; depth: number; ancestors: number[]; children: number[] }
+  >,
+  totalProjectCountMap: Map<number, number>,
+  directProjectsMap: Map<number, number[]>,
+): BatchMessageHandler<MockProjectCategory> {
+  return async (message: CategoryBatchMessage): Promise<void> => {
+    const INFO_PREFIX = 'project:category:info:';
+    const ORDER_PREFIX = 'project:category:order:';
+    const CHAIN_PREFIX = 'project:category:chain:';
+    const COUNT_PREFIX = 'project:category:count:';
+    const PROJECTS_PREFIX = 'project:category:projects:';
+
+    // 1. 按消息顺序排序（消息已按 sortedIds 顺序发布）
+    const sortedBatch = message.data;
+
+    // 2. 写入 Redis（单次 Pipeline）
+    const pipeline = redis.pipeline();
+    sortedBatch.forEach((cat) => {
+      // 分类详情（Hash）
+      pipeline.hmset(`${INFO_PREFIX}${cat.id}`, {
+        id: String(cat.id),
+        name: cat.name,
+        parent_id: String(cat.parent_id),
+        sort: String(cat.sort),
+        icon: cat.icon || '',
+        description: cat.description || '',
+        create_time: String(cat.create_time),
+      });
+
+      // 排序索引（List）
+      pipeline.rpush(`${ORDER_PREFIX}all`, cat.id);
+
+      // 祖先链路（Hash）
+      const chainData = chainCacheMap.get(cat.id)!;
+      pipeline.hmset(`${CHAIN_PREFIX}${cat.id}`, {
+        chain: JSON.stringify(chainData.chain),
+        depth: String(chainData.depth),
+        ancestors: JSON.stringify(chainData.ancestors),
+        children: JSON.stringify(chainData.children),
+      });
+
+      // 计数器（String）
+      pipeline.set(
+        `${COUNT_PREFIX}${cat.id}`,
+        totalProjectCountMap.get(cat.id) || 0,
+      );
+
+      // 分类文集 ID 列表（Set）- 只有有文集的分类才写入
+      const projectIds = directProjectsMap.get(cat.id) || [];
+      if (projectIds.length > 0) {
+        pipeline.sadd(`${PROJECTS_PREFIX}${cat.id}`, ...projectIds);
+      }
+    });
+    await pipeline.execAsync();
+
+    // 3. 更新 MongoDB 统计字段
+    await Promise.all(
+      sortedBatch.map((cat) =>
+        categoryMongoCollection.updateOne(
+          { id: cat.id },
+          {
+            $set: {
+              project_count: totalProjectCountMap.get(cat.id) || 0,
+              project_ids: directProjectsMap.get(cat.id) || [],
+            },
+          },
+        ),
+      ),
+    );
+
+    console.log(
+      `[RebuildCategoryCache] 消费者处理：第 ${message.batchIndex}/${message.totalBatches} 批，本批 ${sortedBatch.length} 条${message.isLast ? ' (最后一批)' : ''}`,
+    );
+  };
+}
+
+/**
+ * 从 Table 获取数据并全量重建分类缓存（RabbitMQ 生产者-消费者模式）
+ *
+ * 【架构设计】
+ * 阶段 1：元数据全量获取 + 内存计算（同步）
+ *   - 分类元数据（id/parent_id/sort）全量获取，内存极小
+ *   - 文集数据（id/project_category_id）分段获取
+ *   - 内存中计算树形结构（祖先链路、子孙数量）
+ *
+ * 阶段 2：清除旧 Redis 缓存
+ *   - 使用 SCAN 增量迭代获取所有匹配键，避免 KEYS 阻塞
+ *
+ * 阶段 3：RabbitMQ 生产者-消费者模式（异步）
+ *   - 生产者：将分类 ID 分批发布到独立队列（每批 200 个）
+ *   - 消费者：从队列接收批次，获取详情 → 写入 Redis → 更新 MongoDB
+ *   - 背压控制：prefetch=1，每次只处理一批，避免内存溢出
+ *
+ * 【一致性保证】
+ * - 元数据全量获取，树形计算基于完整数据，保证祖先链路和数量准确
+ * - 清除旧缓存后再启动生产者，避免新旧数据混杂
+ * - 持久化队列 + 持久化消息，进程重启后可恢复
+ *
+ * @returns 重建结果（分类数量、文集数量、批次数、耗时）
+ */
+export async function rebuildCategoryCacheFromTable(): Promise<{
+  categoryCount: number;
+  projectCount: number;
+  batchCount: number;
+  duration: number;
+}> {
+  const startTime = Date.now();
+  console.log(
+    '[RebuildCategoryCache] ====== 开始全量重建（RabbitMQ 生产者-消费者模式）======',
+  );
+
+  // ========== 阶段 1：元数据获取 + 内存计算 ==========
+  console.log('[RebuildCategoryCache] 阶段 1：获取元数据并计算树形结构...');
+
+  const [categoryMeta, allProjects] = await Promise.all([
+    fetchCategoryMetaFromTable(),
+    fetchProjectsFromTableInBatches(),
+  ]);
+
+  // 内存计算（只需要元数据 + 文集数据）
+  const { sorted, chainCacheMap, totalProjectCountMap, directProjectsMap } =
+    computeCategoryCacheData(categoryMeta, allProjects);
+
+  const sortedIds = sorted.map((c) => c.id);
+  const totalBatches = Math.ceil(sortedIds.length / CATEGORY_BATCH_SIZE);
+  console.log(
+    `[RebuildCategoryCache] 阶段 1 完成：分类 ${sortedIds.length} 条，文集 ${allProjects.length} 条，分 ${totalBatches} 批`,
+  );
+
+  // ========== 阶段 2：清除旧 Redis 缓存 ==========
+  console.log('[RebuildCategoryCache] 阶段 2：清除旧缓存...');
+
+  const prefixes = [
+    'project:category:info:',
+    'project:category:order:',
+    'project:category:chain:',
+    'project:category:count:',
+    'project:category:projects:',
+  ];
+  const oldKeys = await scanAllKeysByPrefixes(prefixes);
+  if (oldKeys.length > 0) {
+    const delPipeline = redis.pipeline();
+    oldKeys.forEach((key) => delPipeline.del(key));
+    await delPipeline.execAsync();
+    console.log(`[RebuildCategoryCache] 已清除旧缓存：${oldKeys.length} 个键`);
+  }
+
+  // ========== 阶段 3：RabbitMQ 生产者-消费者模式 ==========
+  console.log(
+    '[RebuildCategoryCache] 阶段 3：RabbitMQ 生产者-消费者模式写入...',
+  );
+
+  const { queueName, exchange, routingKey, durable } =
+    PROJECT_CATEGORY_INIT_QUEUE_CONFIG;
+
+  // 3.1 声明持久化队列并绑定到默认交换机
+  await projectInitRabbitmq.declareQueue(queueName, { durable });
+  try {
+    await projectInitRabbitmq.bindQueue(queueName, '', routingKey);
+  } catch (e) {
+    // 绑定可能已存在，忽略错误
+  }
+
+  // 3.2 生产者：全量获取分类详情，分批发布完整对象到队列
+  console.log('[RebuildCategoryCache] 生产者：获取分类详情并发布批次消息...');
+  const allCategories = await categoryTable.findAll();
+  const categoryMap = new Map(allCategories.map((c) => [c.id, c]));
+  const sortedCategories = sortedIds
+    .map((id) => categoryMap.get(id))
+    .filter((c): c is MockProjectCategory => c !== undefined);
+
+  for (let i = 0; i < sortedCategories.length; i += CATEGORY_BATCH_SIZE) {
+    const batchIndex = Math.floor(i / CATEGORY_BATCH_SIZE) + 1;
+    const batchData = sortedCategories.slice(i, i + CATEGORY_BATCH_SIZE);
+    const isLast = batchIndex === totalBatches;
+
+    const message: CategoryBatchMessage = {
+      batchIndex,
+      totalBatches,
+      data: batchData,
+      isLast,
+      totalCount: sortedCategories.length,
+    };
+
+    await projectInitRabbitmq.publish(
+      exchange,
+      routingKey,
+      Buffer.from(JSON.stringify(message)),
+      { persistent: true },
+    );
+
+    console.log(
+      `[RebuildCategoryCache] 生产者：批次 ${batchIndex}/${totalBatches} 已发布（${batchData.length} 条）${isLast ? ' (最后一批)' : ''}`,
+    );
+  }
+
+  // 3.3 消费者：注册处理器并消费队列
+  console.log('[RebuildCategoryCache] 消费者：开始消费队列...');
+  const handler = createCategoryRebuildHandler(
+    chainCacheMap,
+    totalProjectCountMap,
+    directProjectsMap,
+  );
+  await consumeBatch<MockProjectCategory>(
+    [handler],
+    PROJECT_CATEGORY_INIT_QUEUE_CONFIG,
+    projectInitRabbitmq,
+    3, // 最大重试次数
+  );
+
+  const duration = Date.now() - startTime;
+  console.log(
+    `[RebuildCategoryCache] ====== 重建完成（RabbitMQ 模式），耗时 ${duration}ms（分类 ${sortedIds.length} 条，文集 ${allProjects.length} 条，${totalBatches} 批）======`,
+  );
+
+  return {
+    categoryCount: sortedIds.length,
+    projectCount: allProjects.length,
+    batchCount: totalBatches,
+    duration,
+  };
+}
+
 // #endregion 冷启动初始化与工具函数

@@ -180,6 +180,9 @@ export default defineConfig({
       '**/validator.ts',
       '**/*.validator.ts',
       '**/middleware.ts',
+      // 数据访问层（非 mock 路由配置）
+      '**/repository.ts',
+      '**/*.repository.ts',
     ],
   }, // mock 配置
   // mock:false,

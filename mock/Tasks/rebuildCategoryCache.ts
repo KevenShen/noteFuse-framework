@@ -2,14 +2,19 @@
  * 定期全量重建分类缓存任务
  *
  * 【任务作用】
- * 定期从数据库全量获取分类和文集数据，重建分类缓存（四个独立缓存管理器），
+ * 定期从数据库（Table）分段获取分类和文集数据，重建分类缓存，
  * 确保分类缓存与数据库数据一致，解决计数器偏差、排序索引不一致等问题。
  *
- * 【四个缓存管理器】
+ * 【数据获取策略】
+ * - 分类数据：全量获取（数据量小，且树形计算需要全量父子关系）
+ * - 文集数据：分段获取（每页 500 条，避免一次性加载大量数据到内存）
+ *
+ * 【五个缓存管理器】
  * - categoryInfoCache (Hash)：分类详情
  * - categoryOrderCache (List)：排序索引
  * - categoryCountCache (String)：文集数计数器
  * - categoryChainCache (Hash)：祖先链路
+ * - categoryProjectsCache (Set)：分类下的文集 ID 列表
  *
  * 【调度配置】
  * - 任务名称：rebuild-category-cache
@@ -20,9 +25,8 @@
  *
  * 【执行流程】
  * 1. 记录任务开始时间
- * 2. 调用 initCategoryCache() 全量重建分类缓存
+ * 2. 调用 rebuildCategoryCacheFromTable() 从 Table 获取数据并重建缓存
  * 3. 记录执行结果和统计信息
- * 4. 发送事件通知（任务完成/失败）
  *
  * 【使用场景】
  * - 定期校准分类缓存与数据库数据的一致性
@@ -33,7 +37,7 @@
  */
 
 import { scheduler } from '../Core/scheduler';
-import { initCategoryCache } from '../Entities/project';
+import { rebuildCategoryCacheFromTable } from '../Entities/project';
 
 /** 任务名称 */
 export const REBUILD_CATEGORY_CACHE_TASK = 'rebuild-category-cache';
@@ -57,7 +61,7 @@ export function registerRebuildCategoryCacheTask() {
   // 注册定时任务
   const task = scheduler.createTask({
     name: REBUILD_CATEGORY_CACHE_TASK,
-    description: '定期全量重建分类缓存（四个独立缓存管理器）',
+    description: '定期全量重建分类缓存（从 Table 分段获取数据）',
     priority: 'low',
     schedule: {
       type: 'cron',
@@ -84,20 +88,22 @@ export function registerRebuildCategoryCacheTask() {
         scheduledAt: ctx.scheduledAt,
       });
 
-      // 执行全量重建（异步函数，需要 await）
-      const result = await initCategoryCache();
+      // 执行全量重建（从 Table 分段获取数据 + 重建缓存）
+      const result = await rebuildCategoryCacheFromTable();
 
       // 记录执行结果
       console.log(`[Task] 执行完成：${REBUILD_CATEGORY_CACHE_TASK}`);
       console.log(`[Task] 执行结果：`, {
-        categoryCount: result.length,
+        categoryCount: result.categoryCount,
+        projectCount: result.projectCount,
+        duration: `${result.duration}ms`,
         message: '分类缓存全量重建成功',
       });
 
       // 返回执行结果
       return {
         success: true,
-        categoryCount: result.length,
+        ...result,
         message: '分类缓存全量重建成功',
       };
     },

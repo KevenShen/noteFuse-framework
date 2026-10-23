@@ -30,7 +30,7 @@ export type GetCategoryDetailResponse = MockProjectCategory;
 /** 获取分类列表请求参数（Query）
  *
  * 【当前实现状态】
- * - include_project_count：已废弃，统一返回带统计字段的列表（project_count + project_ids）
+ * - 统一返回带统计字段的列表（project_count + project_ids）
  * - parent_id：预留，service 层暂未支持按父分类过滤（返回全量后前端过滤）
  * - keyword：预留，service 层暂未支持关键词搜索（返回全量后前端过滤）
  */
@@ -39,8 +39,6 @@ export interface GetCategoryListRequest {
   parent_id?: number;
   /** 搜索关键词（分类名称） */
   keyword?: string;
-  /** 是否包含文集数量（默认 true） */
-  include_project_count?: boolean;
 }
 
 /** 获取分类列表响应数据（data 字段内容，统一带统计字段） */
@@ -60,6 +58,8 @@ export interface CreateCategoryRequest {
   icon?: string;
   /** 描述（可选） */
   description?: string;
+  /** 最大分类层级（可选，默认 3，最大 3，方便未来扩展） */
+  max_depth?: number;
 }
 
 /** 创建分类响应数据（data 字段内容） */
@@ -117,6 +117,8 @@ export interface BatchMoveCategoriesRequest {
   ids: number[];
   /** 目标父分类 ID（0 表示移动到顶级） */
   target_parent_id: number;
+  /** 最大分类层级（默认 3，最大 3，控制移动后不超过该层级） */
+  max_depth?: number;
 }
 
 /** 批量移动分类响应数据（data 字段内容） */
@@ -125,15 +127,9 @@ export interface BatchMoveCategoriesResponse {
   movedIds: number[];
   /** 目标父分类 ID */
   targetParentId: number;
-  /** 更新的链路数量 */
-  updatedChains: number;
-  /** 更新的计数器数量 */
-  updatedCounters: number;
   /** 受影响的分类 ID 集合（自身 + 所有后代 + 旧祖先 + 新祖先） */
   affectedIds: number[];
-  /** 耗时（毫秒） */
-  duration: number;
-  /** 更新后的全部分类列表（扁平化，用于前端乐观更新，无需重新请求） */
+  /** 受影响的分类详情列表（含最新 project_count，用于前端乐观更新合并） */
   categories: MockProjectCategory[];
 }
 

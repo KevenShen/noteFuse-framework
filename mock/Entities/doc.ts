@@ -817,7 +817,7 @@ initDocAnnotationTableIndexes();
 // #endregion 文档实体数据表实例（L1：MockTable 内存数据库，主存储）
 
 // #region 文集缓存层（L3：Redis KV 缓存，延迟最低）
-
+// ==================== 1. Redis缓存层（配置） ====================
 /**
  * 文档模块缓存配置
  *
@@ -909,7 +909,7 @@ const DOC_CACHE_CONFIG = {
     },
   },
 } as const;
-
+// ==================== 2. Redis缓存层（实例实现） ====================
 // ----------------------------------------------------------------------------
 // 3.1 文档分类缓存（四个独立管理器）
 // ----------------------------------------------------------------------------
@@ -1010,7 +1010,7 @@ export const docVersionCache = createCache(DOC_CACHE_CONFIG.docVersion);
 // #endregion 文集缓存层（L3）
 
 // #region 文集 MongoDB 集合定义（L2：MongoDB 文档数据库，支持复杂查询）
-
+// ==================== 1. MongoDB集合定义（类型定义并使用固定数据初始化） ====================
 /**
  * 文档分类 MongoDB 集合
  *
@@ -1116,7 +1116,7 @@ export interface MongoDoc extends MockDoc {
   /** 该文档的版本总数（冷启动时预计算，写入时实时维护） */
   version_count: number;
 }
-
+// ==================== 2. MongoDB集合定义（索引初始化） ====================
 // ----------------------------------------------------------------------------
 // 5. MongoDB 索引初始化
 // ----------------------------------------------------------------------------
@@ -1198,7 +1198,7 @@ function initDocVersionMongoIndexes(): void {
 
   console.log('[DocMongo] 文档版本集合索引初始化完成：共 2 个复合索引');
 }
-
+// ==================== 3. MongoDB集合定义（索引初始化立即执行） ====================
 // 立即执行 MongoDB 索引初始化
 initDocCategoryMongoIndexes();
 initDocMongoIndexes();
@@ -1206,7 +1206,7 @@ initDocVersionMongoIndexes();
 // #endregion MongoDB 集合定义（L2 文档数据库）
 
 // #region 冷启动初始化与工具函数
-
+// ==================== 1. 全局冷启动初始化（MongoDB + Redis） ====================
 /**
  * 文档分类缓存数据计算结果
  */
@@ -1528,7 +1528,7 @@ export async function initDocData(): Promise<void> {
       `${allVersions.length} 个版本，耗时 ${duration}ms`,
   );
 }
-
+// ==================== 2. 模块加载时自动执行全局冷启动初始化 ====================
 // 模块加载时自动执行全局冷启动初始化
 initDocData();
 // #endregion 冷启动初始化与工具函数

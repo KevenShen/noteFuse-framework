@@ -78,3 +78,6 @@ export { WithBackup } from './29-backup.mixin';
 
 // L11 工具层
 export { WithUtility } from './31-utility.mixin';
+
+// L12 关联关系层
+export { WithAssociation } from './32-association.mixin';

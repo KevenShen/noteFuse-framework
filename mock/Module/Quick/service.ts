@@ -23,22 +23,10 @@
  */
 
 import { BusinessError } from '../../Core';
-import {
-  quickItemTable,
-  quickGroupTable,
-  quickGroupRelationTable,
-  quickItemInfoCache,
-  quickItemListCache,
-  quickItemHotCache,
-  quickGroupInfoCache,
-  quickGroupListCache,
-  quickGroupItemsCache,
-} from '../../Entities/quick';
 import type {
   MockQuickGroup,
   MockQuickGroupRelation,
   MockQuickItem,
-  QuickItemType,
 } from '../../Entities/quick';
 import type {
   AddItemToGroupRequest,
@@ -50,6 +38,7 @@ import type {
   UpdateQuickGroupRequest,
   UpdateQuickItemRequest,
 } from './dto';
+import { quickRepository } from './repository';
 
 /**
  * 从请求 token 中获取当前用户 ID，兜底 1（mock 环境）
@@ -85,24 +74,22 @@ const getCurrentUserId = async (req?: any): Promise<number> => {
 export async function getQuickGroups(
   userId: number,
 ): Promise<QuickGroupWithItems[]> {
-  // 1. 从 L1 数据库获取数据（主存储）
-  const allGroups = await quickGroupTable.findAll();
-  const allItems = await quickItemTable.findAll();
-  const allRelations = await quickGroupRelationTable.findAll();
+  // 1. 获取数据
+  const allGroups = await quickRepository.findAllGroups();
+  const allItems = await quickRepository.findAllItems();
+  const allRelations = await quickRepository.findAllRelations();
 
-  // 2. 按用户筛选（系统分组 user_id=0 所有用户可见，用户自定义分组仅自己可见）
+  // 2. 按用户筛选
   const filteredGroups = allGroups
     .filter((g) => g.user_id === 0 || g.user_id === userId)
     .sort((a, b) => a.sort - b.sort);
 
   // 3. 关联分组下的操作项
   const result: QuickGroupWithItems[] = filteredGroups.map((group) => {
-    // 获取该分组下的关联记录
     const groupRelations = allRelations
       .filter((r) => r.group_id === group.id)
       .sort((a, b) => a.sort - b.sort);
 
-    // 关联操作项详情
     const items = groupRelations
       .map((r) => allItems.find((item) => item.id === r.item_id))
       .filter(Boolean) as MockQuickItem[];
@@ -135,8 +122,8 @@ export async function createQuickGroup(
 ): Promise<MockQuickGroup> {
   const name = data.name.trim();
 
-  // 1. 检查名称是否重复（同用户下）
-  const allGroups = await quickGroupTable.findAll();
+  // 1. 检查名称是否重复
+  const allGroups = await quickRepository.findAllGroups();
   const duplicate = allGroups.find(
     (g) => g.user_id === userId && g.name === name,
   );
@@ -144,27 +131,23 @@ export async function createQuickGroup(
     throw new BusinessError('分组名称已存在');
   }
 
-  // 2. 计算 sort（同用户下分组数量 + 1）
+  // 2. 计算 sort
   const sort =
     data.sort ??
     allGroups.filter((g) => g.user_id === userId).length + 1;
 
-  // 3. 创建分组（L1 主存储）
-  const newGroup = await quickGroupTable.create({
+  // 3. 创建分组
+  const newGroup = await quickRepository.createGroup({
     name,
     user_id: userId,
     icon: data.icon,
     sort,
     created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
-  } as MockQuickGroup);
+  } as Partial<MockQuickGroup>);
 
-  // 4. 清除相关缓存（L3）
-  try {
-    quickGroupListCache.del(String(userId));
-    quickGroupInfoCache.del(String(newGroup.id));
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 4. 清除缓存
+  await quickRepository.clearGroupListCache(userId);
+  await quickRepository.clearGroupInfoCache(newGroup.id);
 
   return newGroup;
 }
@@ -186,15 +169,15 @@ export async function updateQuickGroup(
   data: UpdateQuickGroupRequest,
 ): Promise<MockQuickGroup> {
   // 1. 检查分组是否存在
-  const group = await quickGroupTable.findById(groupId);
+  const group = await quickRepository.findGroupById(groupId);
   if (!group) {
     throw new BusinessError('分组不存在');
   }
 
-  // 2. 如果提供了名称，检查名称是否重复（同用户下）
+  // 2. 如果提供了名称，检查名称是否重复
   if (data.name && data.name.trim()) {
     const name = data.name.trim();
-    const allGroups = await quickGroupTable.findAll();
+    const allGroups = await quickRepository.findAllGroups();
     const duplicate = allGroups.find(
       (g) => g.id !== groupId && g.user_id === group.user_id && g.name === name,
     );
@@ -209,16 +192,12 @@ export async function updateQuickGroup(
   if (data.icon !== undefined) updateData.icon = data.icon;
   if (data.sort !== undefined) updateData.sort = data.sort;
 
-  // 4. 更新分组（L1 主存储）
-  const updatedGroup = await quickGroupTable.updateById(groupId, updateData);
+  // 4. 更新分组
+  const updatedGroup = await quickRepository.updateGroup(groupId, updateData);
 
-  // 5. 清除相关缓存（L3）
-  try {
-    quickGroupListCache.del(String(group.user_id));
-    quickGroupInfoCache.del(String(groupId));
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 5. 清除缓存
+  await quickRepository.clearGroupListCache(group.user_id);
+  await quickRepository.clearGroupInfoCache(groupId);
 
   return updatedGroup!;
 }
@@ -236,7 +215,7 @@ export async function updateQuickGroup(
  */
 export async function deleteQuickGroup(groupId: number): Promise<null> {
   // 1. 检查分组是否存在
-  const group = await quickGroupTable.findById(groupId);
+  const group = await quickRepository.findGroupById(groupId);
   if (!group) {
     throw new BusinessError('分组不存在');
   }
@@ -246,24 +225,20 @@ export async function deleteQuickGroup(groupId: number): Promise<null> {
     throw new BusinessError('系统分组不可删除');
   }
 
-  // 3. 删除分组（L1 主存储）
-  await quickGroupTable.deleteById(groupId);
+  // 3. 删除分组
+  await quickRepository.deleteGroup(groupId);
 
-  // 4. 同时删除关联记录（L1 主存储）
-  const allRelations = await quickGroupRelationTable.findAll();
+  // 4. 删除关联记录
+  const allRelations = await quickRepository.findAllRelations();
   const relationsToDelete = allRelations.filter((r) => r.group_id === groupId);
   for (const relation of relationsToDelete) {
-    await quickGroupRelationTable.deleteById(relation.id);
+    await quickRepository.deleteRelation(relation.id);
   }
 
-  // 5. 清除相关缓存（L3）
-  try {
-    quickGroupListCache.del(String(group.user_id));
-    quickGroupInfoCache.del(String(groupId));
-    quickGroupItemsCache.del(String(groupId));
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 5. 清除缓存
+  await quickRepository.clearGroupListCache(group.user_id);
+  await quickRepository.clearGroupInfoCache(groupId);
+  await quickRepository.clearGroupItemsCache(groupId);
 
   return null;
 }
@@ -280,21 +255,16 @@ export async function deleteQuickGroup(groupId: number): Promise<null> {
  * @returns null
  */
 export async function saveGroupSort(data: SaveGroupSortRequest): Promise<null> {
-  // 1. 逐个更新排序（L1 主存储）
+  // 1. 逐个更新排序
   for (const item of data.sorts) {
-    const group = await quickGroupTable.findById(item.id);
+    const group = await quickRepository.findGroupById(item.id);
     if (group) {
-      await quickGroupTable.updateById(item.id, { sort: item.sort });
+      await quickRepository.updateGroup(item.id, { sort: item.sort });
     }
   }
 
-  // 2. 清除相关缓存（L3）
-  try {
-    // 清除所有用户的分组列表缓存（简化处理）
-    quickGroupListCache.flushAll();
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 2. 清空分组列表缓存
+  await quickRepository.flushGroupListCache();
 
   return null;
 }
@@ -319,10 +289,10 @@ export async function getQuickItems(
   userId: number,
   data: GetQuickItemsRequest,
 ): Promise<MockQuickItem[]> {
-  // 1. 从 L1 数据库获取数据（主存储）
-  const allItems = await quickItemTable.findAll();
+  // 1. 获取数据
+  const allItems = await quickRepository.findAllItems();
 
-  // 2. 按用户筛选（系统操作项 user_id=0 所有用户可见，用户自定义操作项仅自己可见）
+  // 2. 按用户筛选
   let result = allItems.filter(
     (item) => item.user_id === 0 || item.user_id === userId,
   );
@@ -356,8 +326,8 @@ export async function createQuickItem(
 ): Promise<MockQuickItem> {
   const name = data.name.trim();
 
-  // 1. 检查名称是否重复（同用户下）
-  const allItems = await quickItemTable.findAll();
+  // 1. 检查名称是否重复
+  const allItems = await quickRepository.findAllItems();
   const duplicate = allItems.find(
     (item) => item.user_id === userId && item.name === name,
   );
@@ -365,13 +335,13 @@ export async function createQuickItem(
     throw new BusinessError('操作项名称已存在');
   }
 
-  // 2. 计算 sort（同用户下操作项数量 + 1）
+  // 2. 计算 sort
   const sort =
     data.sort ??
     allItems.filter((item) => item.user_id === userId).length + 1;
 
-  // 3. 创建操作项（L1 主存储）
-  const newItem = await quickItemTable.create({
+  // 3. 创建操作项
+  const newItem = await quickRepository.createItem({
     name,
     description: data.description || '',
     icon: data.icon || '⚡',
@@ -384,16 +354,12 @@ export async function createQuickItem(
     sort,
     usage_count: 0,
     created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
-  } as MockQuickItem);
+  } as Partial<MockQuickItem>);
 
-  // 4. 清除相关缓存（L3）
-  try {
-    quickItemListCache.del(String(userId));
-    quickItemInfoCache.del(String(newItem.id));
-    quickItemHotCache.del(data.type);
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 4. 清除缓存
+  await quickRepository.clearItemListCache(userId);
+  await quickRepository.clearItemInfoCache(newItem.id);
+  await quickRepository.clearItemHotCache(data.type);
 
   return newItem;
 }
@@ -415,7 +381,7 @@ export async function updateQuickItem(
   data: UpdateQuickItemRequest,
 ): Promise<MockQuickItem> {
   // 1. 检查操作项是否存在
-  const item = await quickItemTable.findById(itemId);
+  const item = await quickRepository.findItemById(itemId);
   if (!item) {
     throw new BusinessError('操作项不存在');
   }
@@ -425,10 +391,10 @@ export async function updateQuickItem(
     throw new BusinessError('系统操作项不可修改');
   }
 
-  // 3. 如果提供了名称，检查名称是否重复（同用户下）
+  // 3. 如果提供了名称，检查名称是否重复
   if (data.name && data.name.trim()) {
     const name = data.name.trim();
-    const allItems = await quickItemTable.findAll();
+    const allItems = await quickRepository.findAllItems();
     const duplicate = allItems.find(
       (i) => i.id !== itemId && i.user_id === item.user_id && i.name === name,
     );
@@ -448,18 +414,14 @@ export async function updateQuickItem(
   if (data.template_id !== undefined) updateData.template_id = data.template_id;
   if (data.sort !== undefined) updateData.sort = data.sort;
 
-  // 5. 更新操作项（L1 主存储）
-  const updatedItem = await quickItemTable.updateById(itemId, updateData);
+  // 5. 更新操作项
+  const updatedItem = await quickRepository.updateItem(itemId, updateData);
 
-  // 6. 清除相关缓存（L3）
-  try {
-    quickItemListCache.del(String(item.user_id));
-    quickItemInfoCache.del(String(itemId));
-    if (data.type) {
-      quickItemHotCache.del(data.type);
-    }
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
+  // 6. 清除缓存
+  await quickRepository.clearItemListCache(item.user_id);
+  await quickRepository.clearItemInfoCache(itemId);
+  if (data.type) {
+    await quickRepository.clearItemHotCache(data.type);
   }
 
   return updatedItem!;
@@ -478,7 +440,7 @@ export async function updateQuickItem(
  */
 export async function deleteQuickItem(itemId: number): Promise<null> {
   // 1. 检查操作项是否存在
-  const item = await quickItemTable.findById(itemId);
+  const item = await quickRepository.findItemById(itemId);
   if (!item) {
     throw new BusinessError('操作项不存在');
   }
@@ -488,27 +450,22 @@ export async function deleteQuickItem(itemId: number): Promise<null> {
     throw new BusinessError('系统操作项不可删除');
   }
 
-  // 3. 删除操作项（L1 主存储）
-  await quickItemTable.deleteById(itemId);
+  // 3. 删除操作项
+  await quickRepository.deleteItem(itemId);
 
-  // 4. 同时删除关联记录（L1 主存储）
-  const allRelations = await quickGroupRelationTable.findAll();
+  // 4. 删除关联记录
+  const allRelations = await quickRepository.findAllRelations();
   const relationsToDelete = allRelations.filter((r) => r.item_id === itemId);
   for (const relation of relationsToDelete) {
-    await quickGroupRelationTable.deleteById(relation.id);
+    await quickRepository.deleteRelation(relation.id);
   }
 
-  // 5. 清除相关缓存（L3）
-  try {
-    quickItemListCache.del(String(item.user_id));
-    quickItemInfoCache.del(String(itemId));
-    quickItemHotCache.del(item.type);
-    // 清除所有包含该操作项的分组缓存
-    relationsToDelete.forEach((r) => {
-      quickGroupItemsCache.del(String(r.group_id));
-    });
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
+  // 5. 清除缓存
+  await quickRepository.clearItemListCache(item.user_id);
+  await quickRepository.clearItemInfoCache(itemId);
+  await quickRepository.clearItemHotCache(item.type);
+  for (const r of relationsToDelete) {
+    await quickRepository.clearGroupItemsCache(r.group_id);
   }
 
   return null;
@@ -527,23 +484,19 @@ export async function deleteQuickItem(itemId: number): Promise<null> {
  */
 export async function incrementUsage(itemId: number): Promise<MockQuickItem> {
   // 1. 检查操作项是否存在
-  const item = await quickItemTable.findById(itemId);
+  const item = await quickRepository.findItemById(itemId);
   if (!item) {
     throw new BusinessError('操作项不存在');
   }
 
-  // 2. 增加使用次数（L1 主存储）
-  const updatedItem = await quickItemTable.updateById(itemId, {
+  // 2. 增加使用次数
+  const updatedItem = await quickRepository.updateItem(itemId, {
     usage_count: item.usage_count + 1,
   });
 
-  // 3. 清除相关缓存（L3）
-  try {
-    quickItemInfoCache.del(String(itemId));
-    quickItemHotCache.del(item.type);
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 3. 清除缓存
+  await quickRepository.clearItemInfoCache(itemId);
+  await quickRepository.clearItemHotCache(item.type);
 
   return updatedItem!;
 }
@@ -571,19 +524,19 @@ export async function addItemToGroup(
   const itemId = Number(data.item_id);
 
   // 1. 检查分组是否存在
-  const group = await quickGroupTable.findById(groupId);
+  const group = await quickRepository.findGroupById(groupId);
   if (!group) {
     throw new BusinessError('分组不存在');
   }
 
   // 2. 检查操作项是否存在
-  const item = await quickItemTable.findById(itemId);
+  const item = await quickRepository.findItemById(itemId);
   if (!item) {
     throw new BusinessError('操作项不存在');
   }
 
   // 3. 检查是否已存在
-  const allRelations = await quickGroupRelationTable.findAll();
+  const allRelations = await quickRepository.findAllRelations();
   const existing = allRelations.find(
     (r) => r.group_id === groupId && r.item_id === itemId,
   );
@@ -591,25 +544,21 @@ export async function addItemToGroup(
     throw new BusinessError('该操作已在分组中');
   }
 
-  // 4. 计算 sort（该分组下关联数量 + 1）
+  // 4. 计算 sort
   const sort =
     data.sort ??
     allRelations.filter((r) => r.group_id === groupId).length + 1;
 
-  // 5. 创建关联（L1 主存储）
-  const newRelation = await quickGroupRelationTable.create({
+  // 5. 创建关联
+  const newRelation = await quickRepository.createRelation({
     group_id: groupId,
     item_id: itemId,
     sort,
     created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
-  } as MockQuickGroupRelation);
+  } as Partial<MockQuickGroupRelation>);
 
-  // 6. 清除相关缓存（L3）
-  try {
-    quickGroupItemsCache.del(String(groupId));
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 6. 清除缓存
+  await quickRepository.clearGroupItemsCache(groupId);
 
   return newRelation;
 }
@@ -631,7 +580,7 @@ export async function removeItemFromGroup(
   itemId: number,
 ): Promise<null> {
   // 1. 查找关联
-  const allRelations = await quickGroupRelationTable.findAll();
+  const allRelations = await quickRepository.findAllRelations();
   const relation = allRelations.find(
     (r) => r.group_id === groupId && r.item_id === itemId,
   );
@@ -639,15 +588,11 @@ export async function removeItemFromGroup(
     throw new BusinessError('该操作不在分组中');
   }
 
-  // 2. 删除关联（L1 主存储）
-  await quickGroupRelationTable.deleteById(relation.id);
+  // 2. 删除关联
+  await quickRepository.deleteRelation(relation.id);
 
-  // 3. 清除相关缓存（L3）
-  try {
-    quickGroupItemsCache.del(String(groupId));
-  } catch (error) {
-    console.warn('[QuickCache] 清除缓存失败:', error);
-  }
+  // 3. 清除缓存
+  await quickRepository.clearGroupItemsCache(groupId);
 
   return null;
 }

@@ -24,9 +24,9 @@ import type {
 } from './user.dto';
 import { userService } from './user.service';
 
-/**
- * 普通用户控制器
- */
+// ============================================================================
+// 普通用户控制器
+// ============================================================================
 class UserController {
   // ==================== 认证相关 ====================
 
@@ -106,7 +106,7 @@ class UserController {
     const data = req.body as UpdateProfileRequest;
     await handleService<UpdateProfileResponse>(
       res,
-      () => userService.updateProfile(currentUser.id, data, currentUser.email),
+      () => userService.updateProfile(currentUser, data),
       '更新成功',
     );
   }
@@ -146,10 +146,13 @@ class UserController {
     const data = req.body as SaveEditorSettingsRequest;
     await handleService<SaveEditorSettingsResponse>(
       res,
-      () => userService.saveEditorSettings(currentUser.id, data),
+      () => userService.saveEditorSettings(currentUser, data),
       '编辑器设置已保存',
     );
   }
 }
 
+// ============================================================================
+// 导出控制器实例
+// ============================================================================
 export const userController = new UserController();

@@ -28,22 +28,38 @@ export function validateGetDocCategoriesRequest(
 ): void {
   // 文集 ID 必填校验
   if (!data.project_id) {
-    throw new BusinessError('文集 ID 不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '文集 ID 不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 文集 ID 有效性校验
-  if (typeof data.project_id !== 'number' || data.project_id <= 0 || !Number.isInteger(data.project_id)) {
-    throw new BusinessError('文集 ID 必须为正整数', CommonErrorCodes.VALIDATION_FAILED);
+  if (
+    typeof data.project_id !== 'number' ||
+    data.project_id <= 0 ||
+    !Number.isInteger(data.project_id)
+  ) {
+    throw new BusinessError(
+      '文集 ID 必须为正整数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 父分类 ID 校验（如果提供）
   if (data.parent_id !== undefined && data.parent_id < 0) {
-    throw new BusinessError('父分类 ID 不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '父分类 ID 不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 搜索关键词长度校验（如果提供）
   if (data.keyword !== undefined && data.keyword.length > 50) {
-    throw new BusinessError('搜索关键词长度不能超过50个字符', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '搜索关键词长度不能超过50个字符',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 }
 
@@ -57,17 +73,26 @@ export function validateGetAllDocCategoriesRequest(
 ): void {
   // 文集 ID 校验（如果提供）
   if (data.project_id !== undefined && data.project_id < 0) {
-    throw new BusinessError('文集 ID 不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '文集 ID 不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 父分类 ID 校验（如果提供）
   if (data.parent_id !== undefined && data.parent_id < 0) {
-    throw new BusinessError('父分类 ID 不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '父分类 ID 不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 搜索关键词长度校验（如果提供）
   if (data.keyword !== undefined && data.keyword.length > 50) {
-    throw new BusinessError('搜索关键词长度不能超过50个字符', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '搜索关键词长度不能超过50个字符',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 }
 
@@ -83,32 +108,50 @@ export function validateCreateDocCategoryRequest(
 ): void {
   // 文集 ID 必填校验
   if (!data.project_id) {
-    throw new BusinessError('文集 ID 不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '文集 ID 不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 分类名称必填校验
   if (!data.name) {
-    throw new BusinessError('分类名称不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '分类名称不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 名称长度校验
   if (data.name.length < 1 || data.name.length > 50) {
-    throw new BusinessError('分类名称长度应为1-50位', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '分类名称长度应为1-50位',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 父分类 ID 校验（如果提供）
   if (data.parent_id !== undefined && data.parent_id < 0) {
-    throw new BusinessError('父分类 ID 不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '父分类 ID 不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 排序值校验（如果提供）
   if (data.sort !== undefined && data.sort < 0) {
-    throw new BusinessError('排序值不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '排序值不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 图标长度校验（如果提供）
   if (data.icon !== undefined && data.icon.length > 100) {
-    throw new BusinessError('图标长度不能超过100个字符', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '图标长度不能超过100个字符',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 }
 
@@ -129,27 +172,45 @@ export function validateUpdateDocCategoryRequest(
     data.sort === undefined &&
     data.icon === undefined
   ) {
-    throw new BusinessError('至少提供一个更新字段（name/parent_id/sort/icon）', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '至少提供一个更新字段（name/parent_id/sort/icon）',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 名称长度校验（如果提供）
-  if (data.name !== undefined && (data.name.length < 1 || data.name.length > 50)) {
-    throw new BusinessError('分类名称长度应为1-50位', CommonErrorCodes.VALIDATION_FAILED);
+  if (
+    data.name !== undefined &&
+    (data.name.length < 1 || data.name.length > 50)
+  ) {
+    throw new BusinessError(
+      '分类名称长度应为1-50位',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 父分类 ID 校验（如果提供）
   if (data.parent_id !== undefined && data.parent_id < 0) {
-    throw new BusinessError('父分类 ID 不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '父分类 ID 不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 排序值校验（如果提供）
   if (data.sort !== undefined && data.sort < 0) {
-    throw new BusinessError('排序值不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '排序值不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 图标长度校验（如果提供）
   if (data.icon !== undefined && data.icon.length > 100) {
-    throw new BusinessError('图标长度不能超过100个字符', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '图标长度不能超过100个字符',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 }
 
@@ -165,12 +226,22 @@ export function validateDeleteDocCategoryRequest(
 ): void {
   // 必填校验
   if (data.id === undefined || data.id === null) {
-    throw new BusinessError('分类 ID 不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '分类 ID 不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // ID 有效性校验（中间件已将 params 中的数字字符串转换为 number）
-  if (typeof data.id !== 'number' || data.id <= 0 || !Number.isInteger(data.id)) {
-    throw new BusinessError('分类 ID 必须为正整数', CommonErrorCodes.VALIDATION_FAILED);
+  if (
+    typeof data.id !== 'number' ||
+    data.id <= 0 ||
+    !Number.isInteger(data.id)
+  ) {
+    throw new BusinessError(
+      '分类 ID 必须为正整数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 }
 
@@ -186,18 +257,27 @@ export function validateBatchDeleteDocCategoriesRequest(
 ): void {
   // 必填校验
   if (!data.ids || !Array.isArray(data.ids) || data.ids.length === 0) {
-    throw new BusinessError('分类 ID 数组不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '分类 ID 数组不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 数组长度校验
   if (data.ids.length > 100) {
-    throw new BusinessError('一次最多删除100个分类', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '一次最多删除100个分类',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // ID 有效性校验
   for (const id of data.ids) {
     if (typeof id !== 'number' || id <= 0) {
-      throw new BusinessError('分类 ID 必须为正整数', CommonErrorCodes.VALIDATION_FAILED);
+      throw new BusinessError(
+        '分类 ID 必须为正整数',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
     }
   }
 }
@@ -214,33 +294,51 @@ export function validateBatchMoveDocCategoriesRequest(
 ): void {
   // 必填校验
   if (!data.ids || !Array.isArray(data.ids) || data.ids.length === 0) {
-    throw new BusinessError('分类 ID 数组不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '分类 ID 数组不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   if (data.target_parent_id === undefined || data.target_parent_id === null) {
-    throw new BusinessError('目标父分类 ID 不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '目标父分类 ID 不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 数组长度校验
   if (data.ids.length > 100) {
-    throw new BusinessError('一次最多移动100个分类', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '一次最多移动100个分类',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // ID 有效性校验
   for (const id of data.ids) {
     if (typeof id !== 'number' || id <= 0) {
-      throw new BusinessError('分类 ID 必须为正整数', CommonErrorCodes.VALIDATION_FAILED);
+      throw new BusinessError(
+        '分类 ID 必须为正整数',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
     }
   }
 
   // 目标父分类 ID 校验
   if (data.target_parent_id < 0) {
-    throw new BusinessError('目标父分类 ID 不能为负数', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '目标父分类 ID 不能为负数',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 不能移动到自身下
   if (data.ids.includes(data.target_parent_id)) {
-    throw new BusinessError('不能将分类移动到自身下', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '不能将分类移动到自身下',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 }
 
@@ -256,25 +354,40 @@ export function validateSaveDocCategorySortRequest(
 ): void {
   // 必填校验
   if (!data.sorts || !Array.isArray(data.sorts)) {
-    throw new BusinessError('排序数据不能为空', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '排序数据不能为空',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 数组长度校验
   if (data.sorts.length === 0) {
-    throw new BusinessError('请至少提供一个分类的排序', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '请至少提供一个分类的排序',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   if (data.sorts.length > 500) {
-    throw new BusinessError('一次最多保存500个分类的排序', CommonErrorCodes.VALIDATION_FAILED);
+    throw new BusinessError(
+      '一次最多保存500个分类的排序',
+      CommonErrorCodes.VALIDATION_FAILED,
+    );
   }
 
   // 每个排序项的有效性校验
   for (const item of data.sorts) {
     if (typeof item.id !== 'number' || item.id <= 0) {
-      throw new BusinessError('分类 ID 必须为正整数', CommonErrorCodes.VALIDATION_FAILED);
+      throw new BusinessError(
+        '分类 ID 必须为正整数',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
     }
     if (typeof item.sort !== 'number' || item.sort < 0) {
-      throw new BusinessError('排序值必须为非负整数', CommonErrorCodes.VALIDATION_FAILED);
+      throw new BusinessError(
+        '排序值必须为非负整数',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
     }
   }
 }

@@ -97,6 +97,25 @@ export function validateCreateCategoryRequest(
       CommonErrorCodes.VALIDATION_FAILED,
     );
   }
+
+  // 7. max_depth 校验（可选，默认 3，最大 3，最小 1）
+  if (data.max_depth !== undefined) {
+    if (
+      typeof data.max_depth !== 'number' ||
+      !Number.isInteger(data.max_depth)
+    ) {
+      throw new BusinessError(
+        'max_depth 必须为整数',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
+    }
+    if (data.max_depth < 1 || data.max_depth > 3) {
+      throw new BusinessError(
+        'max_depth 取值范围为 1-3',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
+    }
+  }
 }
 
 /**
@@ -288,7 +307,26 @@ export function validateBatchMoveCategoriesRequest(
     );
   }
 
-  // 5. 不能移动到自己的子分类下（在 service 层校验，这里只做基础校验）
+  // 5. max_depth 校验（可选，默认 3，最大 3，最小 1）
+  if (data.max_depth !== undefined) {
+    if (
+      typeof data.max_depth !== 'number' ||
+      !Number.isInteger(data.max_depth)
+    ) {
+      throw new BusinessError(
+        'max_depth 必须为整数',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
+    }
+    if (data.max_depth < 1 || data.max_depth > 3) {
+      throw new BusinessError(
+        'max_depth 取值范围为 1-3',
+        CommonErrorCodes.VALIDATION_FAILED,
+      );
+    }
+  }
+
+  // 6. 不能移动到自己的子分类下（在 service 层校验，这里只做基础校验）
   if (data.ids.includes(data.target_parent_id)) {
     throw new BusinessError(
       '不能将分类移动到自身下',

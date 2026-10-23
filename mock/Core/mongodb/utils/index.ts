@@ -1,12 +1,14 @@
 /**
  * 工具函数统一导出
- * 
+ *
  * 【工具分组】
  * - query.utils: 查询操作符工具（matchFieldValue/deepEqual/matchDocument）
  * - nested.utils: 嵌套字段工具（getNestedValue/setNestedValue/unsetNestedValue）
  * - update.utils: 更新操作符工具（applyUpdate）
  * - helper.utils: 便捷工具函数（createObjectId/isValidObjectId）
  * - async.utils: 异步模式工具（resolveAsyncDelayConfig/simulateDelay/wrapAsync 等）
+ *
+ * 【注意】MongoDB → MockTable 降级查询工具已迁移到 mock/Core/utils/mongodb.ts
  */
 
 // 查询操作符工具

@@ -193,11 +193,12 @@ export type BatchMessageHandler<T> = (
  * 1. 内存占用极低：每批处理完就释放，不需要收集全量数据
  * 2. 生产者-消费者解耦：数据获取和数据处理可以并行
  * 3. 背压控制：通过 RabbitMQ prefetch 控制消费速度
+ * 4. 字段投影：支持 select 参数，只读取需要的字段，减少内存和网络开销
  *
  * 【流程】
  * 1. 声明持久化队列并绑定到默认交换机
  * 2. 获取总数，计算总批次数
- * 3. 分批从数据库获取数据
+ * 3. 分批从数据库获取数据（支持字段投影）
  * 4. 每批封装为 BatchMessage，publish 到队列
  * 5. 最后一批标记 isLast=true
  *
@@ -207,6 +208,7 @@ export type BatchMessageHandler<T> = (
  * @param sortField 排序字段
  * @param queueConfig 队列配置
  * @param rabbitmq RabbitMQ 实例
+ * @param select 字段投影（只读取指定字段，可选）
  * @returns Promise<{ totalCount: number; totalBatches: number }> 统计信息
  */
 export async function fetchAllWithCursorAndPublish<T>(
@@ -215,6 +217,7 @@ export async function fetchAllWithCursorAndPublish<T>(
   sortField: string,
   queueConfig: QueueConfig,
   rabbitmq: any,
+  select?: string[],
 ): Promise<{ totalCount: number; totalBatches: number }> {
   const startTime = Date.now();
   const { queueName, exchange, routingKey, durable } = queueConfig;
@@ -236,7 +239,8 @@ export async function fetchAllWithCursorAndPublish<T>(
 
   console.log(
     `[Producer] 开始分批获取并发布：共 ${total} 条，` +
-      `分 ${totalBatches} 批，每批 ${batchSize} 条`,
+      `分 ${totalBatches} 批，每批 ${batchSize} 条` +
+      `${select ? `，字段投影：[${select.join(', ')}]` : ''}`,
   );
 
   // ========== 3. 分批获取并发布 ==========
@@ -244,11 +248,12 @@ export async function fetchAllWithCursorAndPublish<T>(
   let publishedCount = 0;
 
   while (currentPage <= totalBatches) {
-    // 3.1 从数据库游标分页获取当前批次数据
+    // 3.1 从数据库游标分页获取当前批次数据（支持字段投影）
     const pageResult = await table.paginate(
       {},
       { [sortField]: 'asc' },
       { page: currentPage, pageSize: batchSize },
+      select ? { select } : undefined,
     );
 
     const batch = pageResult.list;

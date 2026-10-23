@@ -32,6 +32,8 @@ export const CommonErrorCodes = {
   NOT_FOUND: 90004,
   /** 服务器内部错误 */
   INTERNAL_ERROR: 90005,
+  /** 数据无变化，不需要修改 */
+  DATA_NO_CHANGE: 90006,
 } as const;
 
 // ==================== 用户模块（10000-10999） ====================
@@ -62,6 +64,8 @@ export const UserErrorCodes = {
   ONLY_SUPERADMIN_CAN_DELETE: 10011,
   /** 没有权限访问 */
   NO_PERMISSION: 10012,
+  /** 新密码不能与原密码相同 */
+  PASSWORD_SAME_AS_OLD: 10013,
 } as const;
 
 // ==================== 文档模块（11000-11999） ====================

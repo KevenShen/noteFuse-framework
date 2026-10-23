@@ -1,20 +1,11 @@
 // mock/Doc/docCategory.service.ts
 // 文档分类管理服务层
-// 职责：处理文档分类相关的核心业务逻辑，调用数据库（MockTable）和缓存（Redis）
+// 职责：处理文档分类相关的核心业务逻辑
 
 import { BusinessError } from '../../Core';
-import {
-  docCategoryChainCache,
-  docCategoryDocsCache,
-  docCategoryInfoCache,
-  docCategoryMongoCollection,
-  docCategoryOrderCache,
-  docCategoryTable,
-  docTable,
-  type MockDocCategory,
-} from '../../Entities/doc';
-import { projectMongoCollection, projectTable } from '../../Entities/project';
+import type { MockDocCategory } from '../../Entities/doc';
 import type { DocCategoryWithStats } from './docCategory.dto';
+import { docCategoryRepository } from './docCategory.repository';
 
 // ============================================================================
 // 文档分类服务类
@@ -30,99 +21,7 @@ class DocCategoryService {
    * @returns 分类列表（已按 parent_id + sort 排序）
    */
   async getDocCategories(projectId: number): Promise<MockDocCategory[]> {
-    // ========== 1. 尝试从 MongoDB 获取（L2） ==========
-    try {
-      const mongoCategories = await docCategoryMongoCollection
-        .find({ project_id: projectId })
-        .sort({ parent_id: 1, sort: 1 })
-        .toArray();
-      if (mongoCategories && mongoCategories.length > 0) {
-        return mongoCategories.map(({ doc_count, children, ...cat }) => cat);
-      }
-    } catch (error) {
-      console.warn('[DocCategory] MongoDB 读取失败，降级到 Redis 缓存:', error);
-    }
-
-    // ========== 2. 降级到 Redis 缓存获取（L3） ==========
-    try {
-      // 2.1 从排序索引缓存读取分类 ID 列表
-      const categoryIds = await docCategoryOrderCache.lrange(
-        String(projectId),
-        0,
-        -1,
-      );
-      if (categoryIds && categoryIds.length > 0) {
-        // 2.2 使用 Pipeline 批量读取所有分类的详情
-        const pipeline = docCategoryInfoCache.pipeline();
-        for (const id of categoryIds) {
-          pipeline.hgetAll(`${projectId}:${id}`);
-        }
-        const results = await pipeline.execAsync();
-
-        // 2.3 解析 Pipeline 结果，组装分类列表
-        const categories: MockDocCategory[] = [];
-        for (let i = 0; i < categoryIds.length; i++) {
-          const categoryInfo = results[i] as Record<string, string> | null;
-          if (categoryInfo && Object.keys(categoryInfo).length > 0) {
-            categories.push({
-              id: Number(categoryInfo.id),
-              name: categoryInfo.name,
-              parent_id: Number(categoryInfo.parent_id),
-              project_id: Number(categoryInfo.project_id),
-              sort: Number(categoryInfo.sort),
-              icon: categoryInfo.icon || undefined,
-              created_at: categoryInfo.created_at,
-            });
-          }
-        }
-
-        // 2.4 如果成功获取到分类，返回结果
-        if (categories.length > 0) {
-          return categories;
-        }
-      }
-    } catch (error) {
-      console.warn('[DocCategory] Redis 缓存读取失败，降级到 L1 数据库:', error);
-    }
-
-    // ========== 3. 降级到 L1 数据库（MockTable） ==========
-    const allCategories = await docCategoryTable.findAll();
-    const result = allCategories
-      .filter((c) => c.project_id === projectId)
-      .sort((a, b) => {
-        if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
-        return a.sort - b.sort;
-      });
-
-    // 3.1 异步写入 Redis 缓存（不阻塞主流程，下次查询可命中缓存）
-    if (result.length > 0) {
-      try {
-        const pipeline = docCategoryInfoCache.pipeline();
-
-        // 写入排序索引（先删除旧的，再写入新的）
-        pipeline.del(String(projectId));
-        pipeline.rpush(String(projectId), ...result.map((c) => c.id));
-
-        // 批量写入分类详情
-        for (const cat of result) {
-          pipeline.hmset(`${projectId}:${cat.id}`, {
-            id: String(cat.id),
-            name: cat.name,
-            parent_id: String(cat.parent_id),
-            project_id: String(cat.project_id),
-            sort: String(cat.sort),
-            icon: cat.icon || '',
-            created_at: cat.created_at,
-          });
-        }
-
-        await pipeline.execAsync();
-      } catch (error) {
-        console.warn('[DocCategory] 写入 Redis 缓存失败:', error);
-      }
-    }
-
-    return result;
+    return docCategoryRepository.findByProjectId(projectId);
   }
 
   /**
@@ -135,35 +34,10 @@ class DocCategoryService {
     project_id?: number;
     keyword?: string;
   }): Promise<DocCategoryWithStats[]> {
-    // ========== 1. 获取所有分类（优先 MongoDB，降级 L1） ==========
-    let allCategories: MockDocCategory[] = [];
-    try {
-      const query: any = {};
-      if (options?.project_id) {
-        query.project_id = options.project_id;
-      }
-      const mongoCategories = await docCategoryMongoCollection
-        .find(query)
-        .sort({ project_id: 1, parent_id: 1, sort: 1 })
-        .toArray();
-      if (mongoCategories && mongoCategories.length > 0) {
-        allCategories = mongoCategories.map(
-          ({ doc_count, children, ...cat }: any) => cat,
-        );
-      }
-    } catch (error) {
-      console.warn('[DocCategory] MongoDB 读取失败，降级到 L1:', error);
-    }
-
-    // 降级到 L1 数据库
-    if (allCategories.length === 0) {
-      allCategories = await docCategoryTable.findAll();
-      if (options?.project_id) {
-        allCategories = allCategories.filter(
-          (c) => c.project_id === options!.project_id,
-        );
-      }
-    }
+    // 1. 获取所有分类
+    let allCategories = await docCategoryRepository.findAll({
+      project_id: options?.project_id,
+    });
 
     // 关键词筛选
     if (options?.keyword) {
@@ -173,8 +47,8 @@ class DocCategoryService {
       );
     }
 
-    // ========== 2. 计算每个分类的文档数量（含后代） ==========
-    const allDocs = await docTable.findAll();
+    // 2. 计算每个分类的文档数量（含后代）
+    const allDocs = await docCategoryRepository.findAllDocs();
 
     // 构建分类映射，便于查找后代
     const categoryMap = new Map<number, MockDocCategory>();
@@ -228,27 +102,17 @@ class DocCategoryService {
     sort?: number;
     icon?: string;
   }): Promise<MockDocCategory> {
-    // ========== 1. 检查文集是否存在（优先 MongoDB，降级 L1） ==========
-    let projectExists = false;
-    try {
-      const project = await projectMongoCollection.findOne({
-        id: data.project_id,
-      });
-      projectExists = !!project;
-    } catch (error) {
-      console.warn('[DocCategory] MongoDB 检查文集失败，降级到 L1:', error);
-      const project = await projectTable.findById(data.project_id);
-      projectExists = !!project;
-    }
+    // 1. 检查文集是否存在
+    const projectExists = await docCategoryRepository.projectExists(data.project_id);
     if (!projectExists) {
       throw new BusinessError('文集不存在');
     }
 
-    // ========== 2. 获取当前文集的分类列表（三级降级） ==========
+    // 2. 获取当前文集的分类列表
     const existingCategories = await this.getDocCategories(data.project_id);
     const parentId = data.parent_id || 0;
 
-    // 2.1 检查父分类是否存在（如果指定了）
+    // 2.1 检查父分类是否存在
     if (parentId !== 0) {
       const parentExists = existingCategories.some((c) => c.id === parentId);
       if (!parentExists) {
@@ -264,127 +128,79 @@ class DocCategoryService {
       throw new BusinessError('同级分类下已存在相同名称的分类');
     }
 
-    // 2.3 自动计算 sort（同级最大 sort + 1，避免删除后重复）
+    // 2.3 自动计算 sort
     const siblingSorts = existingCategories
       .filter((c) => c.parent_id === parentId)
       .map((c) => c.sort);
     const maxSort = siblingSorts.length > 0 ? Math.max(...siblingSorts) : 0;
 
-    // ========== 3. 创建分类（L1 主存储） ==========
-    const newCategory = await docCategoryTable.create({
+    // 3. 创建分类（MockTable + MongoDB）
+    const newCategory = await docCategoryRepository.create({
       project_id: data.project_id,
       name: data.name,
       parent_id: parentId,
       sort: data.sort ?? maxSort + 1,
       icon: data.icon || '',
       created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
-    } as MockDocCategory);
+    } as Partial<MockDocCategory>);
 
-    // ========== 4. 同步写入 MongoDB（L2） ==========
-    try {
-      await docCategoryMongoCollection.insertOne({
-        ...newCategory,
-        doc_count: 0,
-        children: [],
-      });
-    } catch (error) {
-      console.warn('[DocCategory] 写入 MongoDB 失败:', error);
-    }
-
-    // ========== 5. 精确更新 Redis 缓存（L3） ==========
+    // 4. Redis 缓存更新
     try {
       const projectId = String(data.project_id);
 
-      // 5.1 计算新分类的祖先链路数据
+      // 4.1 计算祖先链路数据
       let chain: number[] = [newCategory.id];
       let depth = 0;
       let ancestors: number[] = [];
 
       if (parentId !== 0) {
-        const parentCategory = existingCategories.find((c) => c.id === parentId);
-        if (parentCategory) {
-          const ancestorIds: number[] = [];
-          let current = parentCategory;
-          while (current && current.parent_id !== 0) {
-            ancestorIds.unshift(current.parent_id);
-            current = existingCategories.find(
-              (c) => c.id === current!.parent_id,
-            )!;
-          }
-          ancestorIds.push(parentId);
-          ancestors = ancestorIds;
-          chain = [...ancestorIds, newCategory.id];
-          depth = ancestorIds.length;
+        const ancestorIds: number[] = [];
+        let current = existingCategories.find((c) => c.id === parentId);
+        while (current && current.parent_id !== 0) {
+          ancestorIds.unshift(current.parent_id);
+          current = existingCategories.find((c) => c.id === current!.parent_id);
         }
+        ancestorIds.push(parentId);
+        ancestors = ancestorIds;
+        chain = [...ancestorIds, newCategory.id];
+        depth = ancestorIds.length;
       }
 
-      // 5.2 计算排序索引的准确插入位置
+      // 4.2 写入分类详情缓存
+      await docCategoryRepository.setCategoryInfo(data.project_id, newCategory);
+
+      // 4.3 写入链路数据缓存
+      await docCategoryRepository.setChain(data.project_id, newCategory.id, {
+        chain,
+        depth,
+        ancestors,
+        children: [],
+      });
+
+      // 4.4 更新排序索引
       const sortedList = [...existingCategories, newCategory].sort((a, b) => {
         if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
         return a.sort - b.sort;
       });
-      const newIndex = sortedList.findIndex((c) => c.id === newCategory.id);
-      const pivotId = newIndex > 0 ? sortedList[newIndex - 1].id : null;
-      const insertAtBeginning = newIndex === 0;
+      const sortedIds = sortedList.map((c) => c.id);
+      await docCategoryRepository.setOrderList(data.project_id, sortedIds);
 
-      // 5.3 构建 docCategoryInfoCache 的 Pipeline
-      const infoPipeline = docCategoryInfoCache.pipeline();
-
-      if (insertAtBeginning) {
-        infoPipeline.lpush(projectId, newCategory.id);
-      } else if (pivotId !== null) {
-        infoPipeline.linsert(projectId, 'AFTER', pivotId, newCategory.id);
-      } else {
-        console.warn('[DocCategory] 未找到插入位置，使用 rpush 兜底');
-        infoPipeline.rpush(projectId, newCategory.id);
-      }
-
-      infoPipeline.hmset(`${projectId}:${newCategory.id}`, {
-        id: String(newCategory.id),
-        name: newCategory.name,
-        parent_id: String(newCategory.parent_id),
-        project_id: String(newCategory.project_id),
-        sort: String(newCategory.sort),
-        icon: newCategory.icon || '',
-        created_at: newCategory.created_at,
-      });
-
-      await infoPipeline.execAsync();
-
-      // 5.4 构建 docCategoryChainCache 的 Pipeline
-      const chainPipeline = docCategoryChainCache.pipeline();
-
-      chainPipeline.hmset(`${projectId}:${newCategory.id}`, {
-        chain: JSON.stringify(chain),
-        depth: String(depth),
-        ancestors: JSON.stringify(ancestors),
-        children: '[]',
-      });
-
-      // 如果有父分类，更新父分类的 children 字段
+      // 4.5 更新父分类的 children
       if (parentId !== 0) {
-        const parentChain = await docCategoryChainCache.hgetAll(
-          `${projectId}:${parentId}`,
-        );
+        const parentChain = await docCategoryRepository.getChain(data.project_id, parentId);
         let parentChildren: number[] = [];
         if (parentChain && parentChain.children) {
           try {
             parentChildren = JSON.parse(parentChain.children);
-          } catch (e) {
+          } catch {
             parentChildren = [];
           }
         }
         if (!parentChildren.includes(newCategory.id)) {
           parentChildren.push(newCategory.id);
         }
-        chainPipeline.hset(
-          `${projectId}:${parentId}`,
-          'children',
-          JSON.stringify(parentChildren),
-        );
+        await docCategoryRepository.setParentChildren(data.project_id, parentId, parentChildren);
       }
-
-      await chainPipeline.execAsync();
     } catch (error) {
       console.warn('[DocCategory] 更新 Redis 缓存失败:', error);
     }
@@ -410,27 +226,8 @@ class DocCategoryService {
       icon?: string;
     },
   ): Promise<MockDocCategory> {
-    // ========== 1. 获取当前分类信息 ==========
-    let oldCategory: MockDocCategory | undefined;
-
-    try {
-      const mongoCategory = await docCategoryMongoCollection.findOne({ id });
-      if (mongoCategory) {
-        const { doc_count, children, ...cat } = mongoCategory as any;
-        oldCategory = cat as MockDocCategory;
-      }
-    } catch (error) {
-      console.warn('[DocCategory] MongoDB 获取旧分类信息失败，降级到 L1:', error);
-    }
-
-    if (!oldCategory) {
-      try {
-        oldCategory = await docCategoryTable.findById(id);
-      } catch (error) {
-        console.warn('[DocCategory] 获取旧分类信息失败:', error);
-      }
-    }
-
+    // 1. 查询分类
+    const oldCategory = await docCategoryRepository.findById(id);
     if (!oldCategory) {
       throw new BusinessError('分类不存在', 404);
     }
@@ -440,72 +237,28 @@ class DocCategoryService {
     const newParentId =
       data.parent_id !== undefined ? data.parent_id : oldParentId;
     const parentChanged = newParentId !== oldParentId;
-    const sortChanged = data.sort !== undefined && data.sort !== oldCategory.sort;
 
-    // ========== 2. 构建更新数据（只更新提供的字段） ==========
+    // 2. 构建更新数据
     const updateData: Partial<MockDocCategory> = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.parent_id !== undefined) updateData.parent_id = data.parent_id;
     if (data.sort !== undefined) updateData.sort = data.sort;
     if (data.icon !== undefined) updateData.icon = data.icon;
 
-    // ========== 3. 更新分类（L1 主存储） ==========
-    const updatedCategory = await docCategoryTable.updateById(id, updateData);
+    // 3. 更新分类（MockTable + MongoDB）
+    const updatedCategory = await docCategoryRepository.update(id, updateData);
     if (!updatedCategory) {
       throw new BusinessError('分类更新失败', 500);
     }
 
-    // ========== 4. 同步更新 MongoDB（L2） ==========
+    // 4. Redis 缓存更新
     try {
-      await docCategoryMongoCollection.updateOne({ id }, { $set: updateData });
-    } catch (error) {
-      console.warn('[DocCategory] 更新 MongoDB 失败:', error);
-    }
+      // 4.1 更新分类详情
+      await docCategoryRepository.setCategoryInfo(oldCategory.project_id, updatedCategory);
 
-    // ========== 5. 精确更新 Redis 缓存（L3） ==========
-    try {
-      // 5.1 更新分类详情
-      const infoPipeline = docCategoryInfoCache.pipeline();
-
-      infoPipeline.hmset(`${projectIdStr}:${id}`, {
-        id: String(updatedCategory.id),
-        name: updatedCategory.name,
-        parent_id: String(updatedCategory.parent_id),
-        project_id: String(updatedCategory.project_id),
-        sort: String(updatedCategory.sort),
-        icon: updatedCategory.icon || '',
-        created_at: updatedCategory.created_at,
-      });
-
-      // 5.2 如果 parent_id 或 sort 变更，更新排序索引
-      if (parentChanged || sortChanged) {
-        const currentOrder = await docCategoryOrderCache.lrange(
-          projectIdStr,
-          0,
-          -1,
-        );
-
-        if (currentOrder && currentOrder.length > 0) {
-          const allCategories = await this.getDocCategories(oldCategory.project_id);
-          const sortedList = allCategories
-            .filter((c) => c.id !== id)
-            .concat([updatedCategory])
-            .sort((a, b) => {
-              if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
-              return a.sort - b.sort;
-            });
-
-          infoPipeline.del(projectIdStr);
-          const sortedIds = sortedList.map((c) => c.id);
-          infoPipeline.rpush(projectIdStr, ...sortedIds);
-        }
-      }
-
-      await infoPipeline.execAsync();
-
-      // 5.3 如果 parent_id 变更，更新链路数据
+      // 4.2 如果 parent_id 变更，更新链路数据
       if (parentChanged) {
-        const chainPipeline = docCategoryChainCache.pipeline();
+        const allCategories = await this.getDocCategories(oldCategory.project_id);
 
         // 计算新的链路数据
         let newChain: number[] = [id];
@@ -513,14 +266,13 @@ class DocCategoryService {
         let newAncestors: number[] = [];
 
         if (newParentId !== 0) {
-          const allCategories = await this.getDocCategories(oldCategory.project_id);
           const parentCategory = allCategories.find((c) => c.id === newParentId);
           if (parentCategory) {
             const ancestorIds: number[] = [];
             let current = parentCategory;
             while (current && current.parent_id !== 0) {
               ancestorIds.unshift(current.parent_id);
-              current = allCategories.find((c) => c.id === current!.parent_id)!;
+              current = allCategories.find((c) => c.id === current!.parent_id);
             }
             ancestorIds.push(newParentId);
             newAncestors = ancestorIds;
@@ -529,64 +281,54 @@ class DocCategoryService {
           }
         }
 
-        chainPipeline.hmset(`${projectIdStr}:${id}`, {
-          chain: JSON.stringify(newChain),
-          depth: String(newDepth),
-          ancestors: JSON.stringify(newAncestors),
+        await docCategoryRepository.setChain(oldCategory.project_id, id, {
+          chain: newChain,
+          depth: newDepth,
+          ancestors: newAncestors,
+          children: [],
         });
 
-        // 从旧父分类的 children 中移除该分类 ID
+        // 从旧父分类的 children 中移除
         if (oldParentId !== 0) {
-          const oldParentChain = await docCategoryChainCache.hgetAll(
-            `${projectIdStr}:${oldParentId}`,
-          );
+          const oldParentChain = await docCategoryRepository.getChain(oldCategory.project_id, oldParentId);
           let oldParentChildren: number[] = [];
           if (oldParentChain && oldParentChain.children) {
             try {
               oldParentChildren = JSON.parse(oldParentChain.children);
-            } catch (e) {
+            } catch {
               oldParentChildren = [];
             }
           }
-          oldParentChildren = oldParentChildren.filter(
-            (childId) => childId !== id,
-          );
-          chainPipeline.hset(
-            `${projectIdStr}:${oldParentId}`,
-            'children',
-            JSON.stringify(oldParentChildren),
-          );
+          oldParentChildren = oldParentChildren.filter((childId) => childId !== id);
+          await docCategoryRepository.setParentChildren(oldCategory.project_id, oldParentId, oldParentChildren);
         }
 
         // 添加到新父分类的 children 中
         if (newParentId !== 0) {
-          const newParentChain = await docCategoryChainCache.hgetAll(
-            `${projectIdStr}:${newParentId}`,
-          );
+          const newParentChain = await docCategoryRepository.getChain(oldCategory.project_id, newParentId);
           let newParentChildren: number[] = [];
           if (newParentChain && newParentChain.children) {
             try {
               newParentChildren = JSON.parse(newParentChain.children);
-            } catch (e) {
+            } catch {
               newParentChildren = [];
             }
           }
           if (!newParentChildren.includes(id)) {
             newParentChildren.push(id);
           }
-          chainPipeline.hset(
-            `${projectIdStr}:${newParentId}`,
-            'children',
-            JSON.stringify(newParentChildren),
-          );
+          await docCategoryRepository.setParentChildren(oldCategory.project_id, newParentId, newParentChildren);
         }
-
-        await chainPipeline.execAsync();
-
-        console.warn(
-          '[DocCategory] parent_id 变更，后代分类的链路缓存将在下次查询时自动重建',
-        );
       }
+
+      // 4.3 更新排序索引
+      const allCategories = await this.getDocCategories(oldCategory.project_id);
+      const sortedList = allCategories.sort((a, b) => {
+        if (a.parent_id !== b.parent_id) return a.parent_id - b.parent_id;
+        return a.sort - b.sort;
+      });
+      const sortedIds = sortedList.map((c) => c.id);
+      await docCategoryRepository.setOrderList(oldCategory.project_id, sortedIds);
     } catch (error) {
       console.warn('[DocCategory] 更新 Redis 缓存失败:', error);
     }
@@ -603,22 +345,8 @@ class DocCategoryService {
    * @returns null
    */
   async deleteDocCategory(id: number): Promise<null> {
-    // ========== 1. 检查分类是否存在 ==========
-    let category: MockDocCategory | undefined;
-    try {
-      const mongoCategory = await docCategoryMongoCollection.findOne({ id });
-      if (mongoCategory) {
-        const { doc_count, children, ...cat } = mongoCategory as any;
-        category = cat as MockDocCategory;
-      }
-    } catch (error) {
-      console.warn('[DocCategory] MongoDB 获取分类失败，降级到 L1:', error);
-    }
-
-    if (!category) {
-      category = await docCategoryTable.findById(id);
-    }
-
+    // 1. 查询分类
+    const category = await docCategoryRepository.findById(id);
     if (!category) {
       throw new BusinessError('分类不存在', 404);
     }
@@ -626,12 +354,10 @@ class DocCategoryService {
     const projectIdStr = String(category.project_id);
     const parentId = category.parent_id;
 
-    // ========== 2. 检查是否有子分类 ==========
+    // 2. 检查是否有子分类
     let hasChildren = false;
     try {
-      const chainData = await docCategoryChainCache.hgetAll(
-        `${projectIdStr}:${id}`,
-      );
+      const chainData = await docCategoryRepository.getChain(category.project_id, id);
       if (chainData && chainData.children) {
         const children = JSON.parse(chainData.children);
         hasChildren = Array.isArray(children) && children.length > 0;
@@ -639,8 +365,7 @@ class DocCategoryService {
         const allCategories = await this.getDocCategories(category.project_id);
         hasChildren = allCategories.some((c) => c.parent_id === id);
       }
-    } catch (error) {
-      console.warn('[DocCategory] 检查子分类失败，降级到数据库查询:', error);
+    } catch {
       const allCategories = await this.getDocCategories(category.project_id);
       hasChildren = allCategories.some((c) => c.parent_id === id);
     }
@@ -649,74 +374,43 @@ class DocCategoryService {
       throw new BusinessError('该分类下存在子分类，请先删除子分类');
     }
 
-    // ========== 3. 检查是否有文档 ==========
+    // 3. 检查是否有文档
     let hasDocs = false;
     try {
-      const docIds = await docCategoryDocsCache.smembers(`${projectIdStr}:${id}`);
+      const docIds = await docCategoryRepository.getDocIdsByCategoryId(category.project_id, id);
       hasDocs = Array.isArray(docIds) && docIds.length > 0;
-    } catch (error) {
-      console.warn('[DocCategory] 检查文档失败，降级到数据库查询:', error);
-      const allDocs = await docTable.findAll();
-      hasDocs = allDocs.some((d) => d.doc_category_id === id);
+    } catch {
+      const docCount = await docCategoryRepository.countDocsByCategoryId(id);
+      hasDocs = docCount > 0;
     }
 
     if (hasDocs) {
       throw new BusinessError('该分类下存在文档，请先移动或删除文档');
     }
 
-    // ========== 4. 删除分类（L1 主存储） ==========
-    await docCategoryTable.deleteById(id);
+    // 4. 删除分类（MockTable + MongoDB）
+    await docCategoryRepository.delete(id);
 
-    // ========== 5. 同步删除 MongoDB（L2） ==========
+    // 5. Redis 缓存清理
     try {
-      await docCategoryMongoCollection.deleteOne({ id });
-    } catch (error) {
-      console.warn('[DocCategory] 删除 MongoDB 失败:', error);
-    }
+      await docCategoryRepository.removeFromOrderList(category.project_id, id);
+      await docCategoryRepository.deleteCategoryInfo(category.project_id, id);
+      await docCategoryRepository.deleteChain(category.project_id, id);
+      await docCategoryRepository.deleteDocIdsCache(category.project_id, id);
 
-    // ========== 6. 精确更新 Redis 缓存（L3） ==========
-    try {
-      // 6.1 构建 docCategoryInfoCache 的 Pipeline
-      const infoPipeline = docCategoryInfoCache.pipeline();
-
-      infoPipeline.lrem(projectIdStr, 0, id);
-      infoPipeline.del(`${projectIdStr}:${id}`);
-
-      await infoPipeline.execAsync();
-
-      // 6.2 构建 docCategoryChainCache 的 Pipeline
-      const chainPipeline = docCategoryChainCache.pipeline();
-
-      chainPipeline.del(`${projectIdStr}:${id}`);
-
-      // 如果有父分类，从父分类的 children 中移除该分类 ID
+      // 更新父分类的 children
       if (parentId !== 0) {
-        const parentChain = await docCategoryChainCache.hgetAll(
-          `${projectIdStr}:${parentId}`,
-        );
+        const parentChain = await docCategoryRepository.getChain(category.project_id, parentId);
         let parentChildren: number[] = [];
         if (parentChain && parentChain.children) {
           try {
             parentChildren = JSON.parse(parentChain.children);
-          } catch (e) {
+          } catch {
             parentChildren = [];
           }
         }
         parentChildren = parentChildren.filter((childId) => childId !== id);
-        chainPipeline.hset(
-          `${projectIdStr}:${parentId}`,
-          'children',
-          JSON.stringify(parentChildren),
-        );
-      }
-
-      await chainPipeline.execAsync();
-
-      // 6.3 删除分类下的文档 ID 集合
-      try {
-        await docCategoryDocsCache.del(`${projectIdStr}:${id}`);
-      } catch (error) {
-        console.warn('[DocCategory] 删除分类文档集合缓存失败:', error);
+        await docCategoryRepository.setParentChildren(category.project_id, parentId, parentChildren);
       }
     } catch (error) {
       console.warn('[DocCategory] 更新 Redis 缓存失败:', error);
@@ -733,9 +427,7 @@ class DocCategoryService {
    * @param data 请求参数（ids: 分类 ID 数组）
    * @returns null
    */
-  async batchDeleteDocCategories(data: {
-    ids: number[];
-  }): Promise<null> {
+  async batchDeleteDocCategories(data: { ids: number[] }): Promise<null> {
     const { ids } = data;
 
     // 获取所有分类，用于判断父子关系

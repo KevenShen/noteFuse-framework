@@ -19,7 +19,7 @@ import {
 // ==================== 普通用户 API 路由定义 ====================
 
 export default {
-  // ---------- 认证相关 ----------
+  // ---------- 登录相关 ----------
 
   /** 登录
    * 中间件：参数校验（body）
@@ -31,11 +31,15 @@ export default {
     (req: Request, res: Response) => userController.login(req, res),
   ),
 
+  // ---------- 退出登录相关 ----------
+
   /** 退出登录
    * 中间件：无（公开接口）
    */
   'POST /api/logout': (req: Request, res: Response) =>
     userController.logout(req, res),
+
+  // ---------- 获取当前用户信息相关 ----------
 
   /** 获取当前用户信息
    * 中间件：认证
